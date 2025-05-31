@@ -75,6 +75,12 @@ class LaptopRLEnv(LaptopEnv, BaseRLEnv):
         ])
 
     def get_robot_state(self):
+
+        assert self.robot_qpos_vec.shape == (22, )
+        assert self.palm_v.shape == (3, )
+        assert self.palm_w.shape == (3, )
+        assert self.palm_pose.p.shape == (3, )
+
         return np.concatenate([
             self.robot_qpos_vec, self.palm_v, self.palm_w, self.palm_pose.p, [float(self.current_step) / float(self.horizon)]
         ])
