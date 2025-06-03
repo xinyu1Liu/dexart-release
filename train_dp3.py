@@ -10,6 +10,7 @@ from equi_diffpo.policy.dp3 import DP3
 from equi_diffpo.model.common.normalizer import LinearNormalizer
 from diffusers.schedulers import DDPMScheduler
 import hydra
+import collections
 
 
 def set_random_quaternion():
@@ -19,14 +20,25 @@ def set_random_quaternion():
 
 class DP3DexArtDataset(Dataset):
     def __init__(self, data_dir):
-        self.paths = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith(".pkl")]
+        self.samples = []
+
+        for filename in os.listdir(data_dir):
+            if filename.endswith(".pkl"):
+                full_path = os.path.join(data_dir, filename)
+                with open(full_path, "rb") as f:
+                    sample_list = pickle.load(f)
+                num_samples = len(sample_list)
+                for i in range(num_samples):
+                    self.samples.append((full_path, i))
 
     def __len__(self):
-        return len(self.paths)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        with open(self.paths[idx], "rb") as f:
-            sample = pickle.load(f)
+        file_path, i = self.samples[idx]
+        with open(file_path, "rb") as f:
+            sample_list = pickle.load(f)
+        sample = sample_list[i]
 
         obs = sample["obs"]
         action = sample["action"]
@@ -35,32 +47,42 @@ class DP3DexArtDataset(Dataset):
             "point_cloud": torch.tensor(obs["observed_point_cloud"], dtype=torch.float32),
             "goal_gripper_pcd": torch.tensor(obs["imagined_robot_point_cloud"], dtype=torch.float32),
             "robot0_eef_pos": torch.tensor(obs["palm_pose.p"], dtype=torch.float32),
-            # "robot0_eef_quat": torch.tensor(obs["palm_pose.q"], dtype=torch.float32),
+            #"robot0_eef_quat": torch.tensor(obs["palm_pose.q"], dtype=torch.float32),       #missing
             "robot0_eef_quat": set_random_quaternion(),
             "robot0_gripper_qpos": torch.tensor(obs["robot_qpos_vec"][-16:], dtype=torch.float32)
         }
 
-        return {"obs": dp3_obs, "action": torch.tensor(action, dtype=torch.float32)}
+        return {
+            "obs": dp3_obs,
+            "action": torch.tensor(action, dtype=torch.float32)
+        }
 
 
 def build_normalizer(dataset):
 
-    obs_list = []
-    action_list = []
+    obs_accum = collections.defaultdict(list)
+    action_accum = []
 
     for sample in dataset:
         obs = sample["obs"]
+        action = sample["action"]
 
         # not normalize point clouds
         obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'goal_gripper_pcd']}
-        obs_list.append(obs_clean)
-        action_list.append(sample["action"])
+
+        for k, v in obs_clean.items():
+            obs_accum[k].append(v.unsqueeze(0))
+
+        action_accum.append(action.unsqueeze(0))
+    obs_stacked = {k: torch.cat(v_list, dim=0) for k, v_list in obs_accum.items()}
+    actions_stacked = torch.cat(action_accum, dim=0)
 
     normalizer = LinearNormalizer()
-    normalizer.fit(obs_list)
+    normalizer.fit(obs_stacked)
 
     action_normalizer = LinearNormalizer()
-    action_normalizer.fit(action_list)
+    action_normalizer.fit({"default": actions_stacked})
+
     normalizer["action"] = action_normalizer["default"]
 
     return normalizer
@@ -125,6 +147,8 @@ def main(cfg):
 
             obs_batch = {k: v.to(device) for k, v in batch["obs"].items()}
             action_batch = batch["action"].to(device)
+            print("obs batch:")
+            print(obs_batch)
 
             model_input = {"obs": obs_batch, "action": action_batch}
             loss, loss_dict, _ = model.compute_loss(model_input)
