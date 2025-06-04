@@ -79,9 +79,9 @@ class DP3(BasePolicy):
             raise NotImplementedError(f"Unsupported action shape {action_shape}")
         
         obs_shape_meta = shape_meta['obs']
-        obs_dict = dict_apply(obs_shape_meta, lambda x: x['shape'])
-        #obs_dict = {k: v["shape"] for k, v in obs_shape_meta.items()}
-        #print(obs_dict)
+        #obs_dict = dict_apply(obs_shape_meta, lambda x: x['shape'])
+        obs_dict = {k: v["shape"] for k, v in obs_shape_meta.items()}
+        print(obs_dict)
 
         obs_encoder = DP3Encoder(observation_space=obs_dict,
                                                    img_crop_shape=crop_shape,
@@ -90,7 +90,7 @@ class DP3(BasePolicy):
                                                 use_pc_color=use_pc_color,
                                                 pointnet_type=pointnet_type,
                                                 goal_mode=goal_mode,
-                                                #state_keys=['robot0_eef_pos', 'robot0_gripper_qpos'],
+                                                state_keys=['robot0_eef_pos', 'robot0_gripper_qpos'],
                                                 )
 
         # create diffusion model
@@ -340,11 +340,11 @@ class DP3(BasePolicy):
         
         # normalize input
 
-        # obs = batch["obs"]
-        # obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'goal_gripper_pcd']}
-        # nobs = self.normalizer.normalize(obs_clean)
-        # nobs["point_cloud"] = obs["point_cloud"]
-        # nobs["goal_gripper_pcd"] = obs["goal_gripper_pcd"]
+        obs = batch["obs"]
+        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'goal_gripper_pcd']}
+        nobs = self.normalizer.normalize(obs_clean)
+        nobs["point_cloud"] = obs["point_cloud"]
+        nobs["goal_gripper_pcd"] = obs["goal_gripper_pcd"]
 
         #print(nobs["point_cloud"])
 
