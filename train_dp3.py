@@ -18,48 +18,49 @@ def set_random_quaternion():
     quat = quat / quat.norm()
     return quat
 
-class DP3DexArtDataset(Dataset):
-    def __init__(self, data_dir):
-        self.samples = []
 
-        for filename in os.listdir(data_dir):
-            if filename.endswith(".pkl"):
-                full_path = os.path.join(data_dir, filename)
-                with open(full_path, "rb") as f:
-                    sample_list = pickle.load(f)
-                num_samples = len(sample_list)
-                for i in range(num_samples):
-                    self.samples.append((full_path, i))
+class DP3DexArtDataset(Dataset):
+    def __init__(self, data_dir, n_obs_steps=2, n_action_steps=8):
+        self.samples = []
+        self.n_obs_steps = n_obs_steps
+        self.n_action_steps = n_action_steps
+
+        for fname in os.listdir(data_dir):
+            if fname.endswith(".pkl"):
+                with open(os.path.join(data_dir, fname), "rb") as f:
+                    traj = pickle.load(f)
+                T = len(traj)
+                max_start = T - (n_obs_steps + n_action_steps) + 1
+                for t in range(max_start):
+                    self.samples.append((traj, t))
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        file_path, i = self.samples[idx]
-        with open(file_path, "rb") as f:
-            sample_list = pickle.load(f)
-        sample = sample_list[i]
+        traj, start_idx = self.samples[idx]
+        obs_seq = traj[start_idx : start_idx + self.n_obs_steps]
+        act_seq = traj[start_idx + self.n_obs_steps : start_idx + self.n_obs_steps + self.n_action_steps]
+        
 
-        obs = sample["obs"]
-        action = sample["action"]
-
-        dp3_obs = {
-            "point_cloud": torch.tensor(obs["observed_point_cloud"], dtype=torch.float32),
-            "goal_gripper_pcd": torch.tensor(obs["imagined_robot_point_cloud"], dtype=torch.float32),
-            "robot0_eef_pos": torch.tensor(obs["palm_pose.p"], dtype=torch.float32),
-            #"robot0_eef_quat": torch.tensor(obs["palm_pose.q"], dtype=torch.float32),       #missing
-            "robot0_eef_quat": set_random_quaternion(),
-            "robot0_gripper_qpos": torch.tensor(obs["robot_qpos_vec"][-16:], dtype=torch.float32)
+        obs = {
+            'point_cloud':         torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_seq]),
+            'goal_gripper_pcd':    torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_seq]),
+            'robot0_eef_pos':      torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_seq]),
+            #'robot0_eef_quat':     torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_seq]),
+            'robot0_eef_quat':     torch.stack([set_random_quaternion() for _ in obs_seq]),
+            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_seq]),
         }
 
+        action = torch.stack([torch.tensor(a["action"], dtype=torch.float32) for a in act_seq])
+
         return {
-            "obs": dp3_obs,
-            "action": torch.tensor(action, dtype=torch.float32)
+            'obs': obs,
+            'action': action
         }
 
 
 def build_normalizer(dataset):
-
     obs_accum = collections.defaultdict(list)
     action_accum = []
 
@@ -67,13 +68,16 @@ def build_normalizer(dataset):
         obs = sample["obs"]
         action = sample["action"]
 
-        # not normalize point clouds
+        # Exclude point cloud fields from normalization
         obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'goal_gripper_pcd']}
 
         for k, v in obs_clean.items():
-            obs_accum[k].append(v.unsqueeze(0))
+            # v is (n_obs_steps, dim); flatten across time
+            obs_accum[k].append(v.reshape(-1, v.shape[-1]))
 
-        action_accum.append(action.unsqueeze(0))
+        # action is (n_action_steps, dim); flatten across time
+        action_accum.append(action.reshape(-1, action.shape[-1]))
+
     obs_stacked = {k: torch.cat(v_list, dim=0) for k, v_list in obs_accum.items()}
     actions_stacked = torch.cat(action_accum, dim=0)
 
@@ -81,12 +85,10 @@ def build_normalizer(dataset):
     normalizer.fit(obs_stacked)
 
     action_normalizer = LinearNormalizer()
-    action_normalizer.fit({"default": actions_stacked})
-
-    normalizer["action"] = action_normalizer["default"]
+    action_normalizer.fit({"action": actions_stacked})
+    normalizer["action"] = action_normalizer["action"]
 
     return normalizer
-
 
 
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="dp3")
@@ -129,6 +131,7 @@ def main(cfg):
         n_action_steps=n_action_steps,
         n_obs_steps=n_obs_steps,
         pointcloud_encoder_cfg=pointcloud_encoder_cfg,
+        pointnet_type="act3d",
     ).to(device)
 
 
@@ -142,13 +145,18 @@ def main(cfg):
         total_loss = 0.0
 
         for batch in dataloader:
+            
+            #print("batch shape:")
+            #print(batch['obs']['point_cloud'].shape)
+            #print(batch['action'].shape)
+
             obs_batch = batch["obs"]
             action_batch = batch["action"].to(device)
 
             obs_batch = {k: v.to(device) for k, v in batch["obs"].items()}
             action_batch = batch["action"].to(device)
-            print("obs batch:")
-            print(obs_batch)
+            #print("obs batch:")
+            #print(obs_batch)
 
             model_input = {"obs": obs_batch, "action": action_batch}
             loss, loss_dict, _ = model.compute_loss(model_input)
