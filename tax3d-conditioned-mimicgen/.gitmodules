@@ -1,0 +1,3 @@
+[submodule "third_party/non-rigid"]
+	path = third_party/non-rigid
+	url = https://github.com/YingYuan0414/non-rigid.git

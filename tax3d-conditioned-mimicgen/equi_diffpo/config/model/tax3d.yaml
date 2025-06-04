@@ -1,0 +1,140 @@
+name: tax3d
+
+mode: train
+seed: 42
+log_dir: ${hydra:runtime.cwd}/logs
+output_dir: ${hydra:runtime.output_dir}
+
+checkpoint:
+  # If we want to load a model for a specific run, we can change that here.
+  run_id: hzy8lxjr  # first try: 01ory8n5
+  reference: ${model.wandb.entity}/${model.wandb.project}/model-${model.checkpoint.run_id}:best
+
+wandb:
+  entity: r-pad
+  project: tax3d_square_d2
+
+  # Group is for grouping runs together (i.e. a train run and an eval run).
+  group: mimicgen
+
+  # Where to dump wandb logs, etc.
+  save_dir: ${model.output_dir}
+  # Put artifacts at the toplevel so that we don't have to re-download each time...
+  artifact_dir: ${hydra:runtime.cwd}/wandb_artifacts
+
+model:
+  name: df_cross
+  # Model settings
+  type: point # (flow, point) Type of model
+  size: xS # (xs, s, ...) Architecture of DiT
+  in_channels: 3 # Number of input channels
+  learn_sigma: True # Learn sigma for diffusion
+  center_noise: False # Center noise for diffusion # TODO: get rid of this one
+  rotary: False # Use rotary embedding for diffusion
+
+  # Model-based data processing params
+  world_frame: False # world frame for scene/object
+  scene_anchor: False # scene-level anchor
+  rel_pose: True # Use relative action-anchor pose for diffusion
+  rel_pose_type: translation # (quaternion, rotation_6d, logmap, translation) representation for relative action-anchor pose
+  center_type: anchor_center # [action_center, anchor_center, scene_center, none], centers the point clouds
+  action_context_center_type: center # [center, random, none], centers the action context point clouds
+  predict_ref_frame: False # Predict reference frame for anchor point cloud
+  diffuse_ref_frame: False # Diffuse reference frame for anchor point cloud
+  oracle: False # if True, use action goal centroid
+  noisy_goal_origin: False # if True, add noise to the goal frame origin
+  extra_features: False # if True, adding extra contextual features to the model
+  normalize_inputs: False # if True, normalize inputs
+
+  # Encoder settings
+  x_encoder: mlp # Encoder current timestep x
+  y_encoder: mlp # (mlp, dgcnn) Encoder for y object (e.g. anchor pcd)
+  x0_encoder: mlp # (mlp, dgcnn) Encoder for x0 object (e.g. action pcd)
+
+  # diffusion settings
+  diff_train_steps: 100 # Number of diffusion steps during training
+  diff_inference_steps: 100 # Number of diffusion steps during inference
+  diff_noise_schedule: linear # (linear, cosine) Noise schedule for diffusion
+  diff_noise_scale: 1.0 # Scale of noise for diffusion
+  diff_type: gaussian
+
+  # Dummy config for tax3dv2.
+  tax3dv2: False
+
+  # TAX3DV2 configs.
+  center_query: False # WARNING: this is probably not in use right now (using extra_features instead)
+
+dataset:
+  name: mimicgen
+  data_dir: "./data/robomimic/datasets/"
+  task: square_d2
+  robot: True
+
+  train_size: null # (int, null) Length of the train dataset
+  val_size: null # (int, null) Length of the validation dataset
+
+  sample_size_action: 512
+  sample_size_anchor: 512
+  downsample_type: fps
+
+  # Model-based params - these are overridden by the model config
+  # type: null # (flow, point) Type of model TODO: do we need this?
+  scene: False # scene-level reasoning
+  world_frame: False # world frame for scene/object
+  scene_anchor: null # scene-level anchor; cannot be True if scene is True
+  rel_pose: null # relative action-anchor pose
+  rel_pose_type: null # (quaternion, rotation_6d, logmap, translation) rotation representation for relative action-anchor pose
+  center_type: null # [action_center, anchor_center, scene_center, none], centers the point clouds
+  action_context_center_type: null # [center, random, none], centers the action context point clouds
+  predict_ref_frame: False # Predict reference frame for anchor point cloud
+  diffuse_ref_frame: False # Diffuse reference frame for anchor point cloud
+  oracle: False # if True, use action goal centroid
+  noisy_goal_origin: False # if True, add noise to the goal frame origin
+
+  # Environment-specific params
+  cloth_geometry: single
+  cloth_pose: fixed
+  anchor_geometry: single
+  anchor_pose: random
+  num_anchors: 2
+  hole: single
+
+  # Dataset pre-processing options
+  # center_type: anchor_center # [action_center, anchor_center, anchor_random, scene_center, none], centers the point clouds w.r.t. the action, anchor, or no centering
+  # action_context_center_type: center # [center, random, none], centers the action context point clouds
+  # pcd_scale_factor: 15.0 # Scale factor for the point clouds
+  # action_transform_type: identity # Transformation type to apply to demonstrations
+  # anchor_transform_type: random_flat_upright # Transformation type to apply to demonstrations
+  translation_variance: 0.0 # Translation variance of the demo transformation
+  rotation_variance: 180 # Rotation variance of the demo transformation
+
+
+  # center_type: anchor_center # [action_center, anchor_center, scene_center, none], centers the point clouds w.r.t. the action, anchor, or no centering
+  # action_context_center_type: center # [center, random, none], centers the action context point clouds
+  scene_transform_type: random_flat_upright # Transformation type to apply to the scene
+
+  anchor_occlusion: False # Whether to randomly occlude the anchor during training
+
+  # Dummy config for tax3dv2.
+  tax3dv2: null
+
+training:
+  lr: 1e-4
+  lr_warmup_steps: 100
+  weight_decay: 1e-5
+  epochs: 20000
+  batch_size: 16
+  val_batch_size: 4
+  grad_clip_norm: 1.0
+  num_training_steps: None # Set by the training loop.
+  sample_size: None # Set by the training loop, from dataset config.
+  sample_size_anchor: None # Set by the training loop, from dataset config.
+
+  check_val_every_n_epochs: 200
+  num_wta_trials: 10
+  additional_train_logging_period: 1000 # Global step period to log additional training metrics
+
+resources:
+  num_workers: 4
+  gpus:
+    - 0
