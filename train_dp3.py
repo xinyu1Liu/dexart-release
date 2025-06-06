@@ -68,7 +68,7 @@ def build_normalizer(dataset):
         obs = sample["obs"]
         action = sample["action"]
 
-        # Exclude point cloud fields from normalization
+        # Exclude point cloud fields from normalization? CONFIRM
         obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'goal_gripper_pcd']}
 
         for k, v in obs_clean.items():

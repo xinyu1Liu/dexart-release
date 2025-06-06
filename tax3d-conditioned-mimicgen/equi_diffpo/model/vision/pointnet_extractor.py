@@ -167,10 +167,10 @@ class Act3dEncoder(nn.Module):
         # x shape: [B, hor, N, input_dim]
 
         if self.goal_mode == 'None':
-            x[..., NUM_SCENE_PCD+138:, :] = 0
+            x[..., NUM_SCENE_PCD+138:, :] = 0   # search 138 TO DO
 
         # scene point cloud
-        chosen_four_point_idx = torch.tensor([30, 40, 110, 135])
+        chosen_four_point_idx = torch.tensor([30, 40, 110, 135])   #8/16 TO DO
         point_cloud = x[..., :NUM_SCENE_PCD, :]
 
         B, N, C = point_cloud.shape
@@ -183,7 +183,7 @@ class Act3dEncoder(nn.Module):
         # attention between gripper pcd and scene pcd
         gripper_pcd = x[..., NUM_SCENE_PCD + chosen_four_point_idx, :]
         gripper_pcd_rel_pos_embedding = self.nets['relative_pe_layer'](gripper_pcd)  # B num_gripper_points encoder_output_dim
-        gripper_pcd_features = self.nets['embed'].weight.unsqueeze(0).repeat(4, B, 1)  # num_gripper_points B encoder_output_dim
+        gripper_pcd_features = self.nets['embed'].weight.unsqueeze(0).repeat(4, B, 1)  # num_gripper_points B encoder_output_dim    #size 4? to do
 
         displacement_to_goal = x[..., NUM_SCENE_PCD + 138 + chosen_four_point_idx, :3] - x[..., NUM_SCENE_PCD + chosen_four_point_idx, :3]
         input_to_position_embedding = torch.cat([gripper_pcd, displacement_to_goal], dim=-1)  # B num_gripper_points 9
@@ -448,9 +448,11 @@ class DP3Encoder(nn.Module):
 
         # probably set NUM_SCENE_PCD = 512 here? And four fingers seperately by 96? CONFIRM
 
-        points[..., :NUM_SCENE_PCD, 3:] = torch.tensor([1, 0, 0])
-        points[..., NUM_SCENE_PCD:NUM_SCENE_PCD+138, 3:] = torch.tensor([0, 1, 0])
-        points[..., NUM_SCENE_PCD+138:, 3:] = torch.tensor([0, 0, 1])
+        
+
+        points[..., :NUM_SCENE_PCD, 3:] = torch.tensor([1, 0, 0])                    #scene
+        points[..., NUM_SCENE_PCD:NUM_SCENE_PCD+138, 3:] = torch.tensor([0, 1, 0])   #gripper
+        points[..., NUM_SCENE_PCD+138:, 3:] = torch.tensor([0, 0, 1])                #goal gripper
 
         # # goal version 2 -- goal gripper flow
         # points[..., :1024, 3:] = torch.tensor([0, 0, 0])

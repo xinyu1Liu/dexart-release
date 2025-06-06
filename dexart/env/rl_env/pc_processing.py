@@ -70,6 +70,17 @@ def process_pc(task_name: str, cloud: np.ndarray, camera_pose: np.ndarray, num_p
         cloud = np.concatenate([pc, handle_mask, instance_body_mask, hand_mask, arm_mask], axis=1)
         # (N, 7) == (N, xyz + 4masks)
 
+        
+        '''
+        LXY NOTE: seg_gt (segmentation label for Po)
+        Columns	    Meaning
+         0-2	    XYZ coordinates (in robot frame)
+           3	    handle_mask (0 or 1): the part of the object instance to be grasped
+           4	    instance_body_mask (0 or 1): the main body of the object instance
+           5	    hand_mask (0 or 1): robot hand
+           6	    arm_mask (0 or 1): robot arm
+        '''
+
     return cloud
 
 def add_gaussian_noise(cloud: np.ndarray, np_random: np.random.RandomState, noise_level=1):

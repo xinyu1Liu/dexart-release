@@ -20,7 +20,9 @@ def get_obs(obs):
         'palm_w': state[25: 28],
         'palm_pose.p': state[28: 31],
         'observed_point_cloud': obs['instance_1-point_cloud'],  # (512, 3)
-        'imagined_robot_point_cloud': obs['imagination_robot'][:, :3]  # (96, 3)
+        "observed_pc_seg-gt": obs['instance_1-seg_gt'],         # (512, 4)
+        'imagined_robot_point_cloud': obs['imagination_robot'][:, :3],  # (96, 3)
+        'imagined_robot_pc_seg-gt': obs['imagination_robot'][:, 3:],    # (96, 4)
     }
     return dp3_obs
 
@@ -71,7 +73,7 @@ if __name__ == "__main__":
     success_list = list()
     reward_list = list()
 
-    demo_save_dir = os.path.join('demo_DexArt_test', task_name)
+    demo_save_dir = os.path.join('demo_DexArt_w.seg', task_name)
     os.makedirs(demo_save_dir, exist_ok=True)
 
     demo_id = 0

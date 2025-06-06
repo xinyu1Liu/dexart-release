@@ -439,6 +439,17 @@ class BaseRLEnv(BaseSimulationEnv, gym.Env):
                     transformed_points = np.concatenate([transformed_points, seg_vector], axis=1)  # Ni * 7
                     imagination_robot.append(transformed_points)
                 self.imaginations["imagination_robot"] = np.concatenate(imagination_robot, axis=0)  # sum(Ni) * 7
+
+                '''
+                LXY NOTE: Segmentation for imagination_robot: 
+                Columns	    Meaning
+                    0-2	    XYZ coordinates (in robot frame)
+                    3	    unused
+                    4	    unused
+                    5	    hand_mask (0 or 1): robot hand
+                    6	    arm_mask (0 or 1): robot arm
+                '''
+
             elif img_type == "instance":
                 imagination_instance = []
                 for link_name, (actor, points, img_class) in img_config.items():
