@@ -19,18 +19,17 @@ def set_random_quaternion():
     return quat
 
 
-class DP3DexArtDataset_STEP(Dataset):
-    def __init__(self, data_dir, n_obs_steps=2, n_action_steps=8):
+class DP3DexArtDataset(Dataset):
+    def __init__(self, data_dir, horizon=16):
         self.samples = []
-        self.n_obs_steps = n_obs_steps
-        self.n_action_steps = n_action_steps
+        self.horizon = horizon
 
         for fname in os.listdir(data_dir):
             if fname.endswith(".pkl"):
                 with open(os.path.join(data_dir, fname), "rb") as f:
                     traj = pickle.load(f)
                 T = len(traj)
-                max_start = T - (n_obs_steps + n_action_steps) + 1
+                max_start = T - horizon + 1
                 for t in range(max_start):
                     self.samples.append((traj, t))
 
@@ -39,22 +38,18 @@ class DP3DexArtDataset_STEP(Dataset):
 
     def __getitem__(self, idx):
         traj, start_idx = self.samples[idx]
-        obs_seq = traj[start_idx : start_idx + self.n_obs_steps]
-        act_seq = traj[start_idx + self.n_obs_steps : start_idx + self.n_obs_steps + self.n_action_steps]
-        
+        window = traj[start_idx : start_idx + self.horizon]
 
         obs = {
-            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_seq]),
-            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_seq]),
-            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_seq]),   # set as imagin_robot for now
-            #'goal_gripper_pcd': ?,
-            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_seq]),
-            #'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_seq]),
-            'robot0_eef_quat': torch.stack([set_random_quaternion() for _ in obs_seq]),
-            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_seq]),
+            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in window]),
+            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in window]),
+            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in window]),  # placeholder
+            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in window]),
+            'robot0_eef_quat': torch.stack([set_random_quaternion() for _ in window]),   #edit later
+            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in window]),
         }
 
-        action = torch.stack([torch.tensor(a["action"], dtype=torch.float32) for a in act_seq])
+        action = torch.stack([torch.tensor(o["action"], dtype=torch.float32) for o in window])
 
         return {
             'obs': obs,
@@ -93,42 +88,6 @@ def build_normalizer(dataset):
     return normalizer
 
 
-class DP3DexArtDataset(Dataset):
-    def __init__(self, data_dir):
-        self.samples = []
-
-        for fname in os.listdir(data_dir):
-            if fname.endswith(".pkl"):
-                with open(os.path.join(data_dir, fname), "rb") as f:
-                    traj = pickle.load(f)
-                    if len(traj) > 0:  # Avoid empty files
-                        self.samples.append(traj)
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        traj = self.samples[idx]
-       
-        obs = {
-            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in traj]),
-            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in traj]),
-            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in traj]),   # set as imagin_robot for now
-            #'goal_gripper_pcd': ?,
-            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in traj]),
-            #'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in traj]),
-            'robot0_eef_quat': torch.stack([set_random_quaternion() for _ in traj]),
-            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in traj]),
-        }
-
-        action = torch.stack([torch.tensor(a["action"], dtype=torch.float32) for a in traj])
-
-        return {
-            'obs': obs,
-            'action': action
-        }
-
-
 
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="dp3")
 def main(cfg):
@@ -139,7 +98,7 @@ def main(cfg):
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = DP3DexArtDataset_STEP(data_dir)
+    dataset = DP3DexArtDataset(data_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8)
 
 
@@ -157,6 +116,9 @@ def main(cfg):
 
 
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
+
+    # TO DO: 1) how to set a proper horizon? how to address long-horison/short-horizon action? 
+    #        2) what is the expected loss after training? e.g. 100 epochs
 
     horizon = 16
     n_action_steps = 8
