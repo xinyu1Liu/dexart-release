@@ -11,7 +11,8 @@ from typing import Tuple, Sequence, Dict, Union, Optional, Callable
 import einops
 from equi_diffpo.model.vision.layers import RelativeCrossAttentionModule, RotaryPositionEncoding3D
 
-NUM_SCENE_PCD = 1024
+NUM_SCENE_PCD = 512
+NUM_HAND_PCD = 96
 
 def create_mlp(
         input_dim: int,
@@ -167,10 +168,10 @@ class Act3dEncoder(nn.Module):
         # x shape: [B, hor, N, input_dim]
 
         if self.goal_mode == 'None':
-            x[..., NUM_SCENE_PCD+138:, :] = 0   # search 138 TO DO
+            x[..., NUM_SCENE_PCD+NUM_HAND_PCD:, :] = 0   # search 138 TO DO
 
         # scene point cloud
-        chosen_four_point_idx = torch.tensor([30, 40, 110, 135])   #8/16 TO DO
+        chosen_four_point_idx = torch.tensor([23, 47, 71, 95])   #8/16 TO DO
         point_cloud = x[..., :NUM_SCENE_PCD, :]
 
         B, N, C = point_cloud.shape
@@ -185,7 +186,7 @@ class Act3dEncoder(nn.Module):
         gripper_pcd_rel_pos_embedding = self.nets['relative_pe_layer'](gripper_pcd)  # B num_gripper_points encoder_output_dim
         gripper_pcd_features = self.nets['embed'].weight.unsqueeze(0).repeat(4, B, 1)  # num_gripper_points B encoder_output_dim    #size 4? to do
 
-        displacement_to_goal = x[..., NUM_SCENE_PCD + 138 + chosen_four_point_idx, :3] - x[..., NUM_SCENE_PCD + chosen_four_point_idx, :3]
+        displacement_to_goal = x[..., NUM_SCENE_PCD + NUM_HAND_PCD + chosen_four_point_idx, :3] - x[..., NUM_SCENE_PCD + chosen_four_point_idx, :3]
         input_to_position_embedding = torch.cat([gripper_pcd, displacement_to_goal], dim=-1)  # B num_gripper_points 9
         gripper_pcd_position_embedding = self.nets['gripper_pcd_position_embedding_mlp'](input_to_position_embedding)
         gripper_pcd_position_embedding = einops.rearrange(gripper_pcd_position_embedding, "B N encoder_output_dim -> N B encoder_output_dim")  # N B encoder_output_dim
@@ -198,7 +199,7 @@ class Act3dEncoder(nn.Module):
         )[-1]  # N B encoder_output_dim
 
         # goal gripper
-        goal_gripper_pcd = x[..., NUM_SCENE_PCD + 138 + chosen_four_point_idx, :]
+        goal_gripper_pcd = x[..., NUM_SCENE_PCD + NUM_HAND_PCD + chosen_four_point_idx, :]
         goal_gripper_pcd_rel_pos_embedding = self.nets['relative_pe_layer'](goal_gripper_pcd)
         goal_gripper_pcd_features = self.nets['goal_embed'].weight.unsqueeze(0).repeat(4, B, 1)
 
@@ -442,17 +443,18 @@ class DP3Encoder(nn.Module):
             points = torch.concat([points, img_points], dim=1)
         
         # re-write one-hot vector for point cloud
-        points = points[..., :NUM_SCENE_PCD+138*2, :]
+        points = points[..., :NUM_SCENE_PCD+NUM_HAND_PCD*2, :]
+
+        # expand dimension for segmentation label
+        seg_pad = torch.zeros(points.shape[:-1] + (3,), device=points.device)
+        points = torch.cat([points, seg_pad], dim=-1)
+        # print(points.shape)
 
         # goal version 1 -- goal gripper pcd
 
-        # probably set NUM_SCENE_PCD = 512 here? And four fingers seperately by 96? CONFIRM
-
-        
-
         points[..., :NUM_SCENE_PCD, 3:] = torch.tensor([1, 0, 0])                    #scene
-        points[..., NUM_SCENE_PCD:NUM_SCENE_PCD+138, 3:] = torch.tensor([0, 1, 0])   #gripper
-        points[..., NUM_SCENE_PCD+138:, 3:] = torch.tensor([0, 0, 1])                #goal gripper
+        points[..., NUM_SCENE_PCD:NUM_SCENE_PCD+NUM_HAND_PCD, 3:] = torch.tensor([0, 1, 0])   #gripper
+        points[..., NUM_SCENE_PCD+NUM_HAND_PCD:, 3:] = torch.tensor([0, 0, 1])                #goal gripper
 
         # # goal version 2 -- goal gripper flow
         # points[..., :1024, 3:] = torch.tensor([0, 0, 0])
@@ -480,6 +482,7 @@ class DP3Encoder(nn.Module):
         pn_feat = self.extractor(points)    # B * out_channel
         
         state = torch.cat([observations[key] for key in self.state_keys], dim=-1)
+        state = state.to(points.device)
         state_feat = self.state_mlp(state)  # B * 64
         final_feat = torch.cat([pn_feat, state_feat], dim=-1)
         return final_feat

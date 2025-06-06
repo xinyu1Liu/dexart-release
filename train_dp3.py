@@ -19,7 +19,7 @@ def set_random_quaternion():
     return quat
 
 
-class DP3DexArtDataset(Dataset):
+class DP3DexArtDataset_STEP(Dataset):
     def __init__(self, data_dir, n_obs_steps=2, n_action_steps=8):
         self.samples = []
         self.n_obs_steps = n_obs_steps
@@ -44,11 +44,13 @@ class DP3DexArtDataset(Dataset):
         
 
         obs = {
-            'point_cloud':         torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_seq]),
-            'goal_gripper_pcd':    torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_seq]),
-            'robot0_eef_pos':      torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_seq]),
-            #'robot0_eef_quat':     torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_seq]),
-            'robot0_eef_quat':     torch.stack([set_random_quaternion() for _ in obs_seq]),
+            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_seq]),
+            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_seq]),
+            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_seq]),   # set as imagin_robot for now
+            #'goal_gripper_pcd': ?,
+            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_seq]),
+            #'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_seq]),
+            'robot0_eef_quat': torch.stack([set_random_quaternion() for _ in obs_seq]),
             'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_seq]),
         }
 
@@ -69,7 +71,7 @@ def build_normalizer(dataset):
         action = sample["action"]
 
         # Exclude point cloud fields from normalization? CONFIRM
-        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'goal_gripper_pcd']}
+        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd']}
 
         for k, v in obs_clean.items():
             # v is (n_obs_steps, dim); flatten across time
@@ -91,6 +93,43 @@ def build_normalizer(dataset):
     return normalizer
 
 
+class DP3DexArtDataset(Dataset):
+    def __init__(self, data_dir):
+        self.samples = []
+
+        for fname in os.listdir(data_dir):
+            if fname.endswith(".pkl"):
+                with open(os.path.join(data_dir, fname), "rb") as f:
+                    traj = pickle.load(f)
+                    if len(traj) > 0:  # Avoid empty files
+                        self.samples.append(traj)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        traj = self.samples[idx]
+       
+        obs = {
+            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in traj]),
+            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in traj]),
+            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in traj]),   # set as imagin_robot for now
+            #'goal_gripper_pcd': ?,
+            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in traj]),
+            #'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in traj]),
+            'robot0_eef_quat': torch.stack([set_random_quaternion() for _ in traj]),
+            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in traj]),
+        }
+
+        action = torch.stack([torch.tensor(a["action"], dtype=torch.float32) for a in traj])
+
+        return {
+            'obs': obs,
+            'action': action
+        }
+
+
+
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="dp3")
 def main(cfg):
 
@@ -100,13 +139,14 @@ def main(cfg):
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = DP3DexArtDataset(data_dir)
+    dataset = DP3DexArtDataset_STEP(data_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8)
 
 
     shape_meta = {
         'obs': {
             'point_cloud': {'shape': (512, 3)},
+            'imagin_robot': {'shape': (96, 3)},
             'goal_gripper_pcd': {'shape': (96, 3)},
             'robot0_eef_pos': {'shape': (3,)},
             'robot0_eef_quat': {'shape': (4,)},        
@@ -132,6 +172,7 @@ def main(cfg):
         n_obs_steps=n_obs_steps,
         pointcloud_encoder_cfg=pointcloud_encoder_cfg,
         pointnet_type="act3d",
+        goal_mode='None',
     ).to(device)
 
 

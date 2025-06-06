@@ -341,9 +341,10 @@ class DP3(BasePolicy):
         # normalize input
 
         obs = batch["obs"]
-        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'goal_gripper_pcd']}
+        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd']}
         nobs = self.normalizer.normalize(obs_clean)
         nobs["point_cloud"] = obs["point_cloud"]
+        nobs["imagin_robot"] = obs["imagin_robot"]
         nobs["goal_gripper_pcd"] = obs["goal_gripper_pcd"]
 
         #print(nobs["point_cloud"])
@@ -425,8 +426,17 @@ class DP3(BasePolicy):
         # apply conditioning
         noisy_trajectory[condition_mask] = cond_data[condition_mask]
 
-        # Predict the noise residual
+
+        device = next(self.model.parameters()).device  # get model device
+        noisy_trajectory = noisy_trajectory.to(device)
+        timesteps = timesteps.to(device)
+        if local_cond is not None:
+            local_cond = local_cond.to(device)
+        if global_cond is not None:
+            global_cond = global_cond.to(device)
         
+        
+        # Predict the noise residual
         pred = self.model(sample=noisy_trajectory, 
                         timestep=timesteps, 
                             local_cond=local_cond, 
@@ -452,6 +462,8 @@ class DP3(BasePolicy):
             target = v_t
         else:
             raise ValueError(f"Unsupported prediction type {pred_type}")
+
+        target = target.to(device)
 
         loss = F.mse_loss(pred, target, reduction='none')
         loss = loss * loss_mask.type(loss.dtype)
