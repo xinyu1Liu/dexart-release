@@ -230,9 +230,13 @@ class DP3(BasePolicy):
         #     pickle.dump(obs_dict['point_cloud'].cpu(), f)
         # print(obs_dict['point_cloud'].shape)
         # exit()
-        
+
+        obs_clean = {k: v for k, v in obs_dict.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd']}
         # normalize input
-        nobs = self.normalizer.normalize(obs_dict)
+        nobs = self.normalizer.normalize(obs_clean)
+        nobs["point_cloud"] = obs_dict["point_cloud"]
+        nobs["imagin_robot"] = obs_dict["imagin_robot"]
+        nobs["goal_gripper_pcd"] = obs_dict["goal_gripper_pcd"]
         # this_n_point_cloud = nobs['imagin_robot'][..., :3] # only use coordinate
         if not self.use_pc_color:
             nobs['point_cloud'] = nobs['point_cloud'][..., :3]
