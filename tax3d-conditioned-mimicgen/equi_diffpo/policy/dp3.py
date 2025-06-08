@@ -11,6 +11,8 @@ import time
 import pytorch3d.ops as torch3d_ops
 from pytorch3d.transforms import quaternion_to_matrix
 import pickle
+import os
+import hydra.utils as utils
 
 from equi_diffpo.model.common.module_attr_mixin import ModuleAttrMixin
 from equi_diffpo.model.common.normalizer import LinearNormalizer
@@ -155,7 +157,7 @@ class DP3(BasePolicy):
         self.num_inference_steps = num_inference_steps
 
         # loading gripper mesh
-        with open(f'/home/xinyu/dexart-release/tax3d-conditioned-mimicgen/eef_pointcloud_wiz_pose_info.pkl', 'rb') as f:
+        with open(os.path.join(utils.get_original_cwd(), 'eef_pointcloud_wiz_pose_info.pkl'), 'rb') as f:
             reference_eef_data = pickle.load(f)
         self.reference_eef_data = reference_eef_data
 
@@ -350,7 +352,7 @@ class DP3(BasePolicy):
         #print(nobs["point_cloud"])
 
         #nobs = self.normalizer.normalize(batch['obs'])
-        nactions = self.normalizer['action'].normalize(batch['action'])
+        nactions = self.normalizer['action'].normalize(batch['action']).to(batch['action'].device)
 
         if not self.use_pc_color:
             nobs['point_cloud'] = nobs['point_cloud'][..., :3]
