@@ -1,0 +1,11 @@
+defaults:
+  - dp3 # This pulls in the entire DP3 config
+
+# DexArt  evaluation-specific fields here
+eval:
+  task_name: laptop
+  checkpoint_path: null
+  eval_per_instance: 100
+  seed: 100
+  use_test_set: false
+  model: ppo # e.g., "dp3"

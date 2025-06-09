@@ -11,6 +11,8 @@ import time
 import pytorch3d.ops as torch3d_ops
 from pytorch3d.transforms import quaternion_to_matrix
 import pickle
+import os
+import hydra.utils as utils
 
 from equi_diffpo.model.common.module_attr_mixin import ModuleAttrMixin
 from equi_diffpo.model.common.normalizer import LinearNormalizer
@@ -155,7 +157,7 @@ class DP3(BasePolicy):
         self.num_inference_steps = num_inference_steps
 
         # loading gripper mesh
-        with open(f'/home/xinyu/dexart-release/tax3d-conditioned-mimicgen/eef_pointcloud_wiz_pose_info.pkl', 'rb') as f:
+        with open(os.path.join(utils.get_original_cwd(), 'eef_pointcloud_wiz_pose_info.pkl'), 'rb') as f:
             reference_eef_data = pickle.load(f)
         self.reference_eef_data = reference_eef_data
 
@@ -228,9 +230,13 @@ class DP3(BasePolicy):
         #     pickle.dump(obs_dict['point_cloud'].cpu(), f)
         # print(obs_dict['point_cloud'].shape)
         # exit()
-        
+
+        obs_clean = {k: v for k, v in obs_dict.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd']}
         # normalize input
-        nobs = self.normalizer.normalize(obs_dict)
+        nobs = self.normalizer.normalize(obs_clean)
+        nobs["point_cloud"] = obs_dict["point_cloud"]
+        nobs["imagin_robot"] = obs_dict["imagin_robot"]
+        nobs["goal_gripper_pcd"] = obs_dict["goal_gripper_pcd"]
         # this_n_point_cloud = nobs['imagin_robot'][..., :3] # only use coordinate
         if not self.use_pc_color:
             nobs['point_cloud'] = nobs['point_cloud'][..., :3]
@@ -350,7 +356,7 @@ class DP3(BasePolicy):
         #print(nobs["point_cloud"])
 
         #nobs = self.normalizer.normalize(batch['obs'])
-        nactions = self.normalizer['action'].normalize(batch['action'])
+        nactions = self.normalizer['action'].normalize(batch['action']).to(batch['action'].device)
 
         if not self.use_pc_color:
             nobs['point_cloud'] = nobs['point_cloud'][..., :3]
