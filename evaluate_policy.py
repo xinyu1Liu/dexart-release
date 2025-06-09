@@ -21,7 +21,7 @@ import torch
 from equi_diffpo.policy.dp3 import DP3
 from diffusers.schedulers import DDPMScheduler
 import collections
-from train_dp3 import set_random_quaternion
+#from train_dp3 import set_random_quaternion
 
 def get_obs(obs):
     """Observation for saving"""
@@ -31,6 +31,7 @@ def get_obs(obs):
         'palm_v': state[22: 25],
         'palm_w': state[25: 28],
         'palm_pose.p': state[28: 31],
+        "palm_pose.q": obs['quat_obs'],
         'observed_point_cloud': obs['instance_1-point_cloud'],  # (512, 3)
         "observed_pc_seg-gt": obs['instance_1-seg_gt'],         # (512, 4)
         'imagined_robot_point_cloud': obs['imagination_robot'][:, :3],  # (96, 3)
@@ -49,7 +50,8 @@ def get_dp3_obs(obs_dict, obs, device, horizon):
     imagin_robot = torch.tensor(obs['imagination_robot'][:, :, :3], dtype=torch.float32).to(device)
     goal_gripper_pcd = torch.tensor(obs['imagination_robot'][:, :, :3], dtype=torch.float32).to(device)
     robot0_eef_pos = torch.tensor(state[28:31], dtype=torch.float32).to(device)[None]
-    robot0_eef_quat = set_random_quaternion().to(device)[None] # FIXME
+    #robot0_eef_quat = set_random_quaternion().to(device)[None] # FIXME
+    robot0_eef_quat = torch.tensor(obs['quat_obs'], dtype=torch.float32).to(device)
     robot0_gripper_qpos = torch.tensor(robot_qpos_vec[-16:], dtype=torch.float32).to(device)[None]
 
     if obs_dict is None:  # First step

@@ -91,8 +91,7 @@ class DP3(BasePolicy):
                                                 pointcloud_encoder_cfg=pointcloud_encoder_cfg,
                                                 use_pc_color=use_pc_color,
                                                 pointnet_type=pointnet_type,
-                                                goal_mode=goal_mode,
-                                                state_keys=['robot0_eef_pos', 'robot0_gripper_qpos'],
+                                                goal_mode=goal_mode
                                                 )
 
         # create diffusion model

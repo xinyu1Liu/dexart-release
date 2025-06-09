@@ -9,8 +9,13 @@ sys.path.append('tax3d-conditioned-mimicgen')
 from equi_diffpo.policy.dp3 import DP3
 from equi_diffpo.model.common.normalizer import LinearNormalizer
 from diffusers.schedulers import DDPMScheduler
+import os
 import hydra
 import collections
+
+#import matplotlib
+#matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 class DP3DexArtDataset(Dataset):
@@ -90,7 +95,8 @@ def main(cfg):
 
     data_dir = "/data/xinyu/demo_dexart_Jun9/laptop"
     batch_size = 128
-    num_epochs = 100
+    num_epochs = 50
+
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -135,10 +141,12 @@ def main(cfg):
     model.set_normalizer(normalizer)
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
+    avg_losses = []
 
     for epoch in range(num_epochs):
         model.train()
         total_loss = 0.0
+        count = 0
 
         for batch in dataloader:
             
@@ -162,10 +170,32 @@ def main(cfg):
             optimizer.step()
 
             total_loss += loss.item()
+            count += 1
 
-        print(f"Epoch {epoch+1}/{num_epochs} - Loss: {total_loss:.4f}")
+
+        avg_loss = total_loss / count
+        avg_losses.append(avg_loss)
+        print(f"Epoch {epoch+1}/{num_epochs} - Average Loss: {avg_loss:.4f}")
         torch.save(model.state_dict(), f"dp3_epoch_{epoch+1}.pt")
 
+    print(avg_losses)
+
+    if avg_losses:
+        try:
+            plt.figure()
+            plt.plot(range(1, len(avg_losses) + 1), avg_losses, marker='o')
+            plt.xlabel('Epoch')
+            plt.ylabel('Average Training Loss')
+            plt.title('Training Loss vs. Epochs')
+            plt.grid(True)
+            plt.show()
+            #plt.savefig("training_loss_plot.png")
+            #plt.close()
+            print("Plot saved successfully.")
+        except Exception as e:
+            print("Failed to plot:", e)
+    else:
+        print("avg_losses is empty — skipping plot.")
 
 if __name__ == "__main__":
     main()
