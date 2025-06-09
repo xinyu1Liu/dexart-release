@@ -19,6 +19,7 @@ def get_obs(obs):
         'palm_v': state[22: 25],
         'palm_w': state[25: 28],
         'palm_pose.p': state[28: 31],
+        "palm_pose.q": obs['quat_obs'],
         'observed_point_cloud': obs['instance_1-point_cloud'],  # (512, 3)
         "observed_pc_seg-gt": obs['instance_1-seg_gt'],         # (512, 4)
         'imagined_robot_point_cloud': obs['imagination_robot'][:, :3],  # (96, 3)
@@ -73,7 +74,7 @@ if __name__ == "__main__":
     success_list = list()
     reward_list = list()
 
-    demo_save_dir = os.path.join('demo_DexArt_w.seg', task_name)
+    demo_save_dir = os.path.join('demo_DexArt_w.seg&q', task_name)
     os.makedirs(demo_save_dir, exist_ok=True)
 
     demo_id = 0

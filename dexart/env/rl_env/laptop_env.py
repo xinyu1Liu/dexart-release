@@ -85,6 +85,9 @@ class LaptopRLEnv(LaptopEnv, BaseRLEnv):
             self.robot_qpos_vec, self.palm_v, self.palm_w, self.palm_pose.p, [float(self.current_step) / float(self.horizon)]
         ])
 
+    def get_quaternion(self):
+        return self.palm_pose.q
+
     def get_reward(self, action):
         reward = 0
         if self.state == 1:

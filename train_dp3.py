@@ -13,16 +13,11 @@ import hydra
 import collections
 
 
-def set_random_quaternion():
-    quat = torch.randn(4)
-    quat = quat / quat.norm()
-    return quat
-
-
 class DP3DexArtDataset(Dataset):
-    def __init__(self, data_dir, horizon=16):
+    def __init__(self, data_dir, horizon= 16, n_obs_steps = 2):
         self.samples = []
         self.horizon = horizon
+        self.n_obs_steps = n_obs_steps
 
         for fname in os.listdir(data_dir):
             if fname.endswith(".pkl"):
@@ -30,7 +25,7 @@ class DP3DexArtDataset(Dataset):
                     traj = pickle.load(f)
                 T = len(traj)
                 max_start = T - horizon + 1
-                for t in range(max_start):
+                for t in range(n_obs_steps, max_start):
                     self.samples.append((traj, t))
 
     def __len__(self):
@@ -38,18 +33,19 @@ class DP3DexArtDataset(Dataset):
 
     def __getitem__(self, idx):
         traj, start_idx = self.samples[idx]
-        window = traj[start_idx : start_idx + self.horizon]
+        obs_window = traj[start_idx - self.n_obs_steps : start_idx]
+        action_window = traj[start_idx : start_idx + self.horizon]
 
         obs = {
-            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in window]),
-            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in window]),
-            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in window]),  # placeholder
-            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in window]),
-            'robot0_eef_quat': torch.stack([set_random_quaternion() for _ in window]),   #edit later
-            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in window]),
+            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_window]),
+            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),
+            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),  # placeholder
+            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_window]),
+            'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_window]),
+            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_window]),
         }
 
-        action = torch.stack([torch.tensor(o["action"], dtype=torch.float32) for o in window])
+        action = torch.stack([torch.tensor(o["action"], dtype=torch.float32) for o in action_window])
 
         return {
             'obs': obs,
@@ -92,7 +88,7 @@ def build_normalizer(dataset):
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="dp3")
 def main(cfg):
 
-    data_dir = "/data/xinyu/demo_DexArt_1036/laptop"
+    data_dir = "/data/xinyu/demo_dexart_Jun9/laptop"
     batch_size = 128
     num_epochs = 100
     lr = 1e-4
@@ -116,9 +112,6 @@ def main(cfg):
 
 
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
-
-    # TO DO: 1) how to set a proper horizon? how to address long-horison/short-horizon action? 
-    #        2) what is the expected loss after training? e.g. 100 epochs
 
     horizon = 16
     n_action_steps = 8
