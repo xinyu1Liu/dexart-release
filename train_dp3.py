@@ -1,7 +1,7 @@
 import os
 import pickle
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
 import torch.optim as optim
 
 import sys
@@ -101,7 +101,23 @@ def main(cfg):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = DP3DexArtDataset(data_dir)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+    
+    total_size = len(dataset)
+    train_size = int(0.8 * total_size)
+    val_size = int(0.1 * total_size)
+    test_size = total_size - train_size - val_size
+
+    train_dataset, val_dataset, test_dataset = random_split(
+        dataset,
+        [train_size, val_size, test_size],
+        generator=torch.Generator().manual_seed(42)
+    )
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
+    
+    #dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8)
 
 
     shape_meta = {
@@ -141,14 +157,17 @@ def main(cfg):
     model.set_normalizer(normalizer)
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
-    avg_losses = []
+    avg_train_losses = []
+    avg_val_losses = []
 
     for epoch in range(num_epochs):
         model.train()
-        total_loss = 0.0
-        count = 0
+        total_train_loss = 0.0
+        total_val_loss = 0.0
+        train_count = 0
+        val_count = 0
 
-        for batch in dataloader:
+        for batch in train_loader:
             
             #print("batch shape:")
             #print(batch['obs']['point_cloud'].shape)
@@ -169,17 +188,57 @@ def main(cfg):
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item()
-            count += 1
+            total_train_loss += loss.item()
+            train_count += 1
 
 
-        avg_loss = total_loss / count
-        avg_losses.append(avg_loss)
-        print(f"Epoch {epoch+1}/{num_epochs} - Average Loss: {avg_loss:.4f}")
+        avg_train_loss = total_train_loss / train_count
+        avg_train_losses.append(avg_train_loss)
+
+        # ===== Validation =====
+        model.eval()
+        total_val_loss = 0.0
+        val_count = 0
+
+        with torch.no_grad():
+            for batch in val_loader:
+                obs_batch = {k: v.to(device) for k, v in batch["obs"].items()}
+                action_batch = batch["action"].to(device)
+
+                model_input = {"obs": obs_batch, "action": action_batch}
+                loss, _, _ = model.compute_loss(model_input)
+
+                total_val_loss += loss.item()
+                val_count += 1
+
+        avg_val_loss = total_val_loss / val_count
+        avg_val_losses.append(avg_val_loss)
+
+        print(f"Epoch {epoch+1}/{num_epochs} - Train Loss: {avg_train_loss:.4f} - Val Loss: {avg_val_loss:.4f}")
         torch.save(model.state_dict(), f"dp3_epoch_{epoch+1}.pt")
 
-    print(avg_losses)
 
+    # ===== Final Test Evaluation =====
+    model.eval()
+    total_test_loss = 0.0
+    test_count = 0
+
+    with torch.no_grad():
+        for batch in test_loader:
+            obs_batch = {k: v.to(device) for k, v in batch["obs"].items()}
+            action_batch = batch["action"].to(device)
+
+            model_input = {"obs": obs_batch, "action": action_batch}
+            loss, _, _ = model.compute_loss(model_input)
+
+            total_test_loss += loss.item()
+            test_count += 1
+
+    avg_test_loss = total_test_loss / test_count
+    print(f"Final Test Loss: {avg_test_loss:.4f}")
+
+
+    '''
     if avg_losses:
         try:
             plt.figure()
@@ -196,6 +255,7 @@ def main(cfg):
             print("Failed to plot:", e)
     else:
         print("avg_losses is empty — skipping plot.")
+    '''
 
 if __name__ == "__main__":
     main()

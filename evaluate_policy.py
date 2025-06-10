@@ -164,7 +164,7 @@ def main(cfg):
     success_list = list()
     reward_list = list()
 
-    demo_save_dir = os.path.join('demo_DexArt_w.seg', task_name)
+    demo_save_dir = os.path.join('demo_dp3', task_name)
     os.makedirs(demo_save_dir, exist_ok=True)
 
     demo_id = 0
