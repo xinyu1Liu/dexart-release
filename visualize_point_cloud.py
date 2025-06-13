@@ -3,7 +3,7 @@ import open3d as o3d
 import time
 import os
 
-file_path = '/data/xinyu/demo_data/laptop/demo_0.npy'
+file_path = 'data/outputs/2025.06.11/17.58.42_train_dp3_stack_d1/demo_dp3/laptop/failure_demo/demo_0.pkl'
 demo = np.load(file_path)
 
 vis = o3d.visualization.Visualizer()

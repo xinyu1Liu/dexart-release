@@ -478,7 +478,8 @@ class BaseRLEnv(BaseSimulationEnv, gym.Env):
         robot_obs = self.get_robot_state()
         oracle_obs = self.get_oracle_state()
         quat_obs = self.get_quaternion()
-        camera_obs.update(dict(state=robot_obs, oracle_state=oracle_obs, quat_obs = quat_obs))
+        stage = self.get_state()
+        camera_obs.update(dict(state=robot_obs, oracle_state=oracle_obs, quat_obs = quat_obs, stage = stage))
         # ================ add the history frame if use_history_obs ===============
         if self.use_history_obs:
             current_obs = camera_obs.copy()

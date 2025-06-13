@@ -87,6 +87,9 @@ class LaptopRLEnv(LaptopEnv, BaseRLEnv):
 
     def get_quaternion(self):
         return self.palm_pose.q
+    
+    def get_state(self):
+        return self.state
 
     def get_reward(self, action):
         reward = 0

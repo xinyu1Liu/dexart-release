@@ -24,6 +24,7 @@ def get_obs(obs):
         "observed_pc_seg-gt": obs['instance_1-seg_gt'],         # (512, 4)
         'imagined_robot_point_cloud': obs['imagination_robot'][:, :3],  # (96, 3)
         'imagined_robot_pc_seg-gt': obs['imagination_robot'][:, 3:],    # (96, 4)
+        'stage': obs['stage']
     }
     return dp3_obs
 
@@ -90,7 +91,10 @@ if __name__ == "__main__":
                 for j in range(env.horizon):         # Loop for max steps
                     if isinstance(obs, dict):
                         for key, value in obs.items():
-                            obs[key] = value[np.newaxis, :]
+                            if isinstance(value, np.ndarray):
+                                obs[key] = value[np.newaxis, :]
+                            else:
+                                obs[key] = np.array([[value]]) 
                     else:
                         obs = obs[np.newaxis, :]
 

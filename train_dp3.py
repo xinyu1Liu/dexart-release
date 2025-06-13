@@ -12,11 +12,12 @@ from diffusers.schedulers import DDPMScheduler
 import os
 import hydra
 import collections
+import open3d as o3d
+import numpy as np
 
 #import matplotlib
 #matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 
 class DP3DexArtDataset(Dataset):
     def __init__(self, data_dir, horizon= 16, n_obs_steps = 2):
@@ -36,21 +37,76 @@ class DP3DexArtDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
+    @staticmethod
+    def visualize_pc(demo1, demo2):
+        vis = o3d.visualization.Visualizer()
+        vis.create_window()
+
+        obs_pc = o3d.geometry.PointCloud()
+        obs_pc.points = o3d.utility.Vector3dVector(demo2[3])
+        obs_pc.paint_uniform_color([0, 0.6, 1])
+        vis.add_geometry(obs_pc)
+
+        imagine_pc = o3d.geometry.PointCloud()
+        imagine_pc.points = o3d.utility.Vector3dVector(demo1[3])
+        imagine_pc.paint_uniform_color([1.0, 0.6, 0])
+        vis.add_geometry(imagine_pc)
+
+        all_points = np.vstack([np.asarray(obs_pc.points), np.asarray(imagine_pc.points)])
+        center = all_points.mean(axis=0)
+
+        front = np.array([0.0, 1.0, 0.0])
+        up = np.array([0.0, 0.0, 1.0])
+        right = np.cross(front, up)
+
+        offset_distance = 0.15  
+        shifted_lookat = center + offset_distance * right
+
+        view_ctl = vis.get_view_control()
+        view_ctl.set_lookat(shifted_lookat.tolist())
+        view_ctl.set_front(front.tolist())
+        view_ctl.set_up(up.tolist())
+        view_ctl.set_zoom(0.8)
+
+        vis.poll_events()
+        vis.update_renderer()
+        
+        first_frame_path = os.path.join("/home/xinyu/dexart-release/visualization", "stage_3.png")
+        vis.capture_screen_image(first_frame_path)
+
+    def getGoal(self, traj):
+
+        last_obs_per_stage = {}
+        last_obs_env = {}
+
+        for o in traj:
+            stage = o["obs"]["stage"]
+            last_obs_per_stage[stage] = o["obs"]["imagined_robot_point_cloud"]
+            last_obs_env[stage] = o["obs"]["observed_point_cloud"]
+
+        return last_obs_per_stage, last_obs_env
+
+
     def __getitem__(self, idx):
         traj, start_idx = self.samples[idx]
         obs_window = traj[start_idx - self.n_obs_steps : start_idx]
         action_window = traj[start_idx : start_idx + self.horizon]
 
+        last_obs_per_stage, last_obs_env = self.getGoal(traj)
+        
         obs = {
             'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_window]),
             'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),
-            'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),  # placeholder
+            'goal_gripper_pcd': torch.stack([torch.tensor(last_obs_per_stage[o["obs"]["stage"]], dtype=torch.float32) for o in obs_window]),
             'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_window]),
             'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_window]),
             'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_window]),
         }
 
         action = torch.stack([torch.tensor(o["action"], dtype=torch.float32) for o in action_window])
+        
+        #self.visualize_pc(last_obs_per_stage, last_obs_env)
+        #input("Paused. Press Enter to continue...")
 
         return {
             'obs': obs,
@@ -93,7 +149,7 @@ def build_normalizer(dataset):
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="dp3")
 def main(cfg):
 
-    data_dir = "/data/xinyu/demo_dexart_Jun9/laptop"
+    data_dir = "/data/xinyu/demo_dexart_Jun13/laptop"
     batch_size = 128
     num_epochs = 50
 
@@ -149,7 +205,7 @@ def main(cfg):
         n_obs_steps=n_obs_steps,
         pointcloud_encoder_cfg=pointcloud_encoder_cfg,
         pointnet_type="act3d",
-        goal_mode='None',
+        goal_mode='pointcloud_oracle',
     ).to(device)
 
 
