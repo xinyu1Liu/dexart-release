@@ -19,8 +19,9 @@ import pickle
 
 import torch
 from equi_diffpo.policy.dp3 import DP3
-from diffusers.schedulers import DDPMScheduler
+from diffusers.schedulers import DDPMScheduler, DDIMScheduler
 import collections
+from collections import deque
 #from train_dp3 import set_random_quaternion
 
 def get_obs(obs):
@@ -40,7 +41,6 @@ def get_obs(obs):
     return obs
 
 HORIZON = 16
-
 
 def get_dp3_obs(obs_dict, obs, device, horizon):
     """Observation for DP3 inference"""
@@ -94,9 +94,9 @@ def prepare_dp3(device, checkpoint_path, horizon, pointcloud_encoder_cfg):
         },
         'action': {'shape': (22,)}
     }
-    noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
-    n_action_steps = 8
+    noise_scheduler = DDIMScheduler(num_train_timesteps=100)
     n_obs_steps = 2
+    n_action_steps = 8
 
     policy = DP3(
         shape_meta=shape_meta,
@@ -179,11 +179,13 @@ def main(cfg):
                 reward_sum = 0
                 demo_data = []
                 obs_dict = None # Initialize at None
+                action_queue = deque([])
 
                 for j in range(env.horizon):         # Loop for max steps
                     if isinstance(obs, dict):
                         for key, value in obs.items():
-                            obs[key] = value[np.newaxis, :]
+                            if type(value) == np.ndarray:
+                                obs[key] = value[np.newaxis, :]
                     else:
                         obs = obs[np.newaxis, :]
 
@@ -191,9 +193,14 @@ def main(cfg):
                         action = policy.predict(observation=obs, deterministic=True)[0]
                     elif eval_cfg.model == "dp3":
                         obs_dict = get_dp3_obs(obs_dict, obs, device, HORIZON)
-                        with torch.no_grad():
-                            result = policy.predict_action(obs_dict)
-                            action = result['action'].squeeze()[0].cpu().numpy()
+
+                        # Receding horizon control
+                        if len(action_queue) == 0:
+                            with torch.no_grad():
+                                result = policy.predict_action(obs_dict)
+                                actions = result['action'].squeeze()
+                                action_queue.extend(actions.tolist())
+                        action = np.array(action_queue.popleft()).astype(np.float32)
                     else:
                         raise NotImplementedError
 
