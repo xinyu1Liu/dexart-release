@@ -122,7 +122,7 @@ def build_normalizer(dataset):
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="dp3")
 def main(cfg):
 
-    data_dir = "/data/xinyu/demo_dexart_Jun13/laptop"
+    data_dir = "/data/xinyu/demo_dexart_Jun18/laptop"
     batch_size = 128
     num_epochs = 500
 

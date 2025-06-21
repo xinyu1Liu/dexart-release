@@ -230,12 +230,15 @@ class DP3(BasePolicy):
         # print(obs_dict['point_cloud'].shape)
         # exit()
 
-        obs_clean = {k: v for k, v in obs_dict.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd']}
+        obs_clean = {k: v for k, v in obs_dict.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd', 'observed_pc_seg-gt', 'imagined_robot_pc_seg-gt']}
         # normalize input
         nobs = self.normalizer.normalize(obs_clean)
         nobs["point_cloud"] = obs_dict["point_cloud"]
         nobs["imagin_robot"] = obs_dict["imagin_robot"]
         nobs["goal_gripper_pcd"] = obs_dict["goal_gripper_pcd"]
+        if "observed_pc_seg-gt" in obs_dict:
+            nobs['observed_pc_seg-gt'] = obs_dict['observed_pc_seg-gt']
+            nobs['imagined_robot_pc_seg-gt'] = obs_dict['imagined_robot_pc_seg-gt']
         # this_n_point_cloud = nobs['imagin_robot'][..., :3] # only use coordinate
         if not self.use_pc_color:
             nobs['point_cloud'] = nobs['point_cloud'][..., :3]
