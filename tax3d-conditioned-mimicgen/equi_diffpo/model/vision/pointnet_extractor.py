@@ -150,7 +150,7 @@ class Act3dEncoder(nn.Module):
         })
 
         position_embedding_mlp = nn.Sequential(
-            nn.Linear(9, 128), nn.ReLU(),
+            nn.Linear(in_channels + 3, 128), nn.ReLU(),
             nn.Linear(128, 256), nn.ReLU(),
             nn.Linear(256, encoder_output_dim // 3),
         )
@@ -187,7 +187,7 @@ class Act3dEncoder(nn.Module):
         gripper_pcd_features = self.nets['embed'].weight.unsqueeze(0).repeat(4, B, 1)  # num_gripper_points B encoder_output_dim    #size 4? to do
 
         displacement_to_goal = x[..., NUM_SCENE_PCD + NUM_HAND_PCD + chosen_four_point_idx, :3] - x[..., NUM_SCENE_PCD + chosen_four_point_idx, :3]
-        input_to_position_embedding = torch.cat([gripper_pcd, displacement_to_goal], dim=-1)  # B num_gripper_points 9
+        input_to_position_embedding = torch.cat([gripper_pcd, displacement_to_goal], dim=-1)  # B num_gripper_points (in_channels+3)
         gripper_pcd_position_embedding = self.nets['gripper_pcd_position_embedding_mlp'](input_to_position_embedding)
         gripper_pcd_position_embedding = einops.rearrange(gripper_pcd_position_embedding, "B N encoder_output_dim -> N B encoder_output_dim")  # N B encoder_output_dim
 
@@ -415,7 +415,7 @@ class DP3Encoder(nn.Module):
                 pointcloud_encoder_cfg.in_channels = 3
                 self.extractor = PointNetEncoderXYZ(**pointcloud_encoder_cfg)
         elif pointnet_type == "act3d":
-            self.extractor = Act3dEncoder(goal_mode=goal_mode)
+            self.extractor = Act3dEncoder(goal_mode=goal_mode, **pointcloud_encoder_cfg)
             self.n_output_channels = 480
         else:
             raise NotImplementedError(f"pointnet_type: {pointnet_type}")
@@ -445,16 +445,33 @@ class DP3Encoder(nn.Module):
         # re-write one-hot vector for point cloud
         points = points[..., :NUM_SCENE_PCD+NUM_HAND_PCD*2, :]
 
+        # Extra segmentation labels from DexArt
+        if "observed_pc_seg-gt" in observations:
+            n_seg_classes = 6 # 4 classes for the scene pcd, one for gripper, one for goal gripper
+        else:
+            n_seg_classes = 3 # scene, gripper, goal
+
         # expand dimension for segmentation label
-        seg_pad = torch.zeros(points.shape[:-1] + (3,), device=points.device)
+        seg_pad = torch.zeros(points.shape[:-1] + (n_seg_classes,), device=points.device)
         points = torch.cat([points, seg_pad], dim=-1)
         # print(points.shape)
 
         # goal version 1 -- goal gripper pcd
 
-        points[..., :NUM_SCENE_PCD, 3:] = torch.tensor([1, 0, 0])                    #scene
-        points[..., NUM_SCENE_PCD:NUM_SCENE_PCD+NUM_HAND_PCD, 3:] = torch.tensor([0, 1, 0])   #gripper
-        points[..., NUM_SCENE_PCD+NUM_HAND_PCD:, 3:] = torch.tensor([0, 0, 1])                #goal gripper
+        # Extra segmentation labels from DexArt
+        if "observed_pc_seg-gt" in observations:
+            labels = observations['observed_pc_seg-gt'].argmax(-1)
+            points[..., :NUM_SCENE_PCD, 3:][labels == 0] = torch.tensor([1., 0, 0, 0, 0, 0]).to(points.device)
+            points[..., :NUM_SCENE_PCD, 3:][labels == 1] = torch.tensor([0, 1., 0, 0, 0, 0]).to(points.device)
+            points[..., :NUM_SCENE_PCD, 3:][labels == 2] = torch.tensor([0, 0, 1., 0, 0, 0]).to(points.device)
+            points[..., :NUM_SCENE_PCD, 3:][labels == 3] = torch.tensor([0, 0, 0, 1., 0, 0]).to(points.device)
+
+            points[..., NUM_SCENE_PCD:NUM_SCENE_PCD+NUM_HAND_PCD, 3:] = torch.tensor([0, 0, 0, 0, 1., 0]).to(points.device)   #gripper
+            points[..., NUM_SCENE_PCD+NUM_HAND_PCD:, 3:] = torch.tensor([0, 0, 0, 0, 0, 1.]).to(points.device)                #goal gripper
+        else:
+            points[..., :NUM_SCENE_PCD, 3:] = torch.tensor([1., 0, 0]).to(points.device)                    #scene
+            points[..., NUM_SCENE_PCD:NUM_SCENE_PCD+NUM_HAND_PCD, 3:] = torch.tensor([0, 1., 0]).to(points.device)   #gripper
+            points[..., NUM_SCENE_PCD+NUM_HAND_PCD:, 3:] = torch.tensor([0, 0, 1.]).to(points.device)                #goal gripper
 
         # # goal version 2 -- goal gripper flow
         # points[..., :1024, 3:] = torch.tensor([0, 0, 0])

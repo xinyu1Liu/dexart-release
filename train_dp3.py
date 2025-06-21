@@ -20,11 +20,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class DP3DexArtDataset(Dataset):
-    def __init__(self, data_dir, horizon= 16, n_obs_steps = 2, goal_mode="None"):
+    def __init__(self, data_dir, horizon= 16, n_obs_steps = 2, goal_mode="None", with_scene_seg=True):
         self.samples = []
         self.horizon = horizon
         self.n_obs_steps = n_obs_steps
         self.goal_mode = goal_mode
+        self.with_scene_seg = with_scene_seg
 
         for fname in os.listdir(data_dir):
             if fname.endswith(".pkl"):
@@ -61,27 +62,22 @@ class DP3DexArtDataset(Dataset):
         obs_window = traj[start_idx - self.n_obs_steps : start_idx]
         action_window = traj[start_idx : start_idx + self.horizon]
 
+        obs = {
+            'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_window]),
+            'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),
+            'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_window]),
+            'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_window]),
+            'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_window]),
+        }
         if self.goal_mode == 'pointcloud_oracle':
             goal_obs_imagin, goal_obs_env = self.getGoal(traj, start_idx)
-            obs = {
-                'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_window]),
-                'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),
-                'goal_gripper_pcd': torch.stack([torch.tensor(goal_obs_imagin, dtype=torch.float32)] * self.n_obs_steps),
-                'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_window]),
-                'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_window]),
-                'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_window]),
-            }
-            #print("pointc")
+            obs['goal_gripper_pcd'] = torch.stack([torch.tensor(goal_obs_imagin, dtype=torch.float32)] * self.n_obs_steps),
         elif self.goal_mode == 'None':
-            obs = {
-                'point_cloud': torch.stack([torch.tensor(o["obs"]["observed_point_cloud"], dtype=torch.float32) for o in obs_window]),
-                'imagin_robot': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),
-                'goal_gripper_pcd': torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window]),
-                'robot0_eef_pos': torch.stack([torch.tensor(o["obs"]['palm_pose.p'], dtype=torch.float32) for o in obs_window]),
-                'robot0_eef_quat': torch.stack([torch.tensor(o["obs"]['palm_pose.q'], dtype=torch.float32) for o in obs_window]),
-                'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_window]),
-            }
-            #print("null")
+            obs['goal_gripper_pcd'] = torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window])
+
+        if self.with_scene_seg:
+            obs['observed_pc_seg-gt'] = torch.stack([torch.tensor(o["obs"]['observed_pc_seg-gt'], dtype=torch.float32) for o in obs_window])
+            obs['imagined_robot_pc_seg-gt'] = torch.stack([torch.tensor(o["obs"]['imagined_robot_pc_seg-gt'], dtype=torch.float32) for o in obs_window])
 
         action = torch.stack([torch.tensor(o["action"], dtype=torch.float32) for o in action_window])
 
@@ -100,7 +96,7 @@ def build_normalizer(dataset):
         action = sample["action"]
 
         # Exclude point cloud fields from normalization? CONFIRM
-        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd']}
+        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd', 'observed_pc_seg-gt', 'imagined_robot_pc_seg-gt']}
 
         for k, v in obs_clean.items():
             # v is (n_obs_steps, dim); flatten across time
@@ -133,7 +129,7 @@ def main(cfg):
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = DP3DexArtDataset(data_dir, goal_mode=cfg.policy.goal_mode)
+    dataset = DP3DexArtDataset(data_dir, goal_mode=cfg.policy.goal_mode, with_scene_seg=cfg.with_scene_seg)
     
     total_size = len(dataset)
     train_size = int(0.8 * total_size)
@@ -160,7 +156,9 @@ def main(cfg):
             'goal_gripper_pcd': {'shape': (96, 3)},
             'robot0_eef_pos': {'shape': (3,)},
             'robot0_eef_quat': {'shape': (4,)},        
-            'robot0_gripper_qpos': {'shape': (16,)}
+            'robot0_gripper_qpos': {'shape': (16,)},
+            'observed_pc_seg-gt': {'shape': (512, 4)},
+            'imagined_robot_pc_seg-gt': {'shape': (96, 4)},
         },
         'action': {'shape': (22,)}
     }
@@ -181,7 +179,7 @@ def main(cfg):
         n_action_steps=n_action_steps,
         n_obs_steps=n_obs_steps,
         pointcloud_encoder_cfg=pointcloud_encoder_cfg,
-        pointnet_type="act3d",
+        pointnet_type=cfg.policy.pointnet_type,
         goal_mode=cfg.policy.goal_mode,
     ).to(device)
 
@@ -252,11 +250,10 @@ def main(cfg):
 
         if epoch % 10 == 0:
             print(f"Epoch {epoch+1}/{num_epochs} - Train Loss: {avg_train_loss:.4f} - Val Loss: {avg_val_loss:.4f}")
+            torch.save(model.state_dict(), f"dp3_epoch_{epoch+1}.pt")
         
         with open("loss_log.txt", "a") as f:
             f.write(f"{epoch+1},{avg_train_loss:.6f},{avg_val_loss:.6f}\n")
-
-        torch.save(model.state_dict(), f"dp3_epoch_{epoch+1}.pt")
 
 
     # ===== Final Test Evaluation =====

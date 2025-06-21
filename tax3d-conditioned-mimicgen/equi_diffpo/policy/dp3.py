@@ -346,11 +346,14 @@ class DP3(BasePolicy):
         # normalize input
 
         obs = batch["obs"]
-        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd']}
+        obs_clean = {k: v for k, v in obs.items() if k not in ['point_cloud', 'imagin_robot', 'goal_gripper_pcd', 'observed_pc_seg-gt', 'imagined_robot_pc_seg-gt']}
         nobs = self.normalizer.normalize(obs_clean)
         nobs["point_cloud"] = obs["point_cloud"]
         nobs["imagin_robot"] = obs["imagin_robot"]
         nobs["goal_gripper_pcd"] = obs["goal_gripper_pcd"]
+        if "observed_pc_seg-gt" in obs:
+            nobs['observed_pc_seg-gt'] = obs['observed_pc_seg-gt']
+            nobs['imagined_robot_pc_seg-gt'] = obs['imagined_robot_pc_seg-gt']
 
         #print(nobs["point_cloud"])
 
