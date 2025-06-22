@@ -10,6 +10,7 @@ from termcolor import cprint
 from typing import Tuple, Sequence, Dict, Union, Optional, Callable
 import einops
 from equi_diffpo.model.vision.layers import RelativeCrossAttentionModule, RotaryPositionEncoding3D
+from equi_diffpo.model.vision.articubot import PointNet2_super
 
 NUM_SCENE_PCD = 512
 NUM_HAND_PCD = 96
@@ -126,19 +127,26 @@ class Act3dEncoder(nn.Module):
                  attention_num_heads=3,
                  attention_num_layers=2,
                  use_repr_10d=False,
+                 vision_encoder_type="mlp",
                  **kwargs
                  ):
         super(Act3dEncoder, self).__init__()
         hidden_layer_dim = encoder_output_dim
         self.goal_mode = goal_mode
-        vision_encoder = nn.Sequential(
-            nn.Linear(in_channels, hidden_layer_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_layer_dim, hidden_layer_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_layer_dim, encoder_output_dim)
-        )
-        vision_encoder = replace_bn_with_gn(vision_encoder)
+        self.vision_encoder_type = vision_encoder_type
+        if vision_encoder_type == "mlp":
+            vision_encoder = nn.Sequential(
+                nn.Linear(in_channels, hidden_layer_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_layer_dim, hidden_layer_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_layer_dim, encoder_output_dim)
+            )
+            vision_encoder = replace_bn_with_gn(vision_encoder)
+        elif vision_encoder_type == "pn_plus_plus":
+            vision_encoder = PointNet2_super(num_classes=encoder_output_dim, input_channel=in_channels)
+        else:
+            raise NotImplementedError(f"Invalid vision encoder type: {vision_encoder_type}")
 
         attn_layers = RelativeCrossAttentionModule(encoder_output_dim, attention_num_heads, attention_num_layers)
         attn_layers = replace_bn_with_gn(attn_layers)
@@ -175,9 +183,15 @@ class Act3dEncoder(nn.Module):
         point_cloud = x[..., :NUM_SCENE_PCD, :]
 
         B, N, C = point_cloud.shape
-        point_cloud_flatten = point_cloud.reshape(-1, C)
-        point_cloud_features_flatten = self.nets['vision_encoder'](point_cloud_flatten)
-        point_cloud_features = point_cloud_features_flatten.reshape(B, N, -1)
+        if self.vision_encoder_type == "mlp":
+            point_cloud_flatten = point_cloud.reshape(-1, C)
+            point_cloud_features_flatten = self.nets['vision_encoder'](point_cloud_flatten)
+            point_cloud_features = point_cloud_features_flatten.reshape(B, N, -1)
+        elif self.vision_encoder_type == "pn_plus_plus":
+            point_cloud_features = self.nets["vision_encoder"](point_cloud.permute(0,2,1))
+        else:
+            raise NotImplementedError(f"Invalid vision encoder type: {self.vision_encoder_type}")
+
         point_cloud_features = einops.rearrange(point_cloud_features, "B N encoder_output_dim -> N B encoder_output_dim")  # N B encoder_output_dim
         point_cloud_rel_pos_embedding = self.nets['relative_pe_layer'](point_cloud)  # B N encoder_output_dim
 

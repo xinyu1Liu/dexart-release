@@ -123,7 +123,7 @@ def build_normalizer(dataset):
 def main(cfg):
 
     data_dir = "/data/xinyu/demo_dexart_Jun18/laptop"
-    batch_size = 128
+    batch_size = 16
     num_epochs = 500
 
     lr = 1e-4

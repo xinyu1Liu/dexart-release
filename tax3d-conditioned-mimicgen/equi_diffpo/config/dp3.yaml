@@ -71,6 +71,7 @@ policy:
     use_layernorm: true
     final_norm: layernorm # layernorm, none
     normal_channel: false
+    vision_encoder_type: pn_plus_plus
 
 ema:
   _target_: equi_diffpo.model.diffusion.ema_model.EMAModel
