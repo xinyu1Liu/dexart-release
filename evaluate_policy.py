@@ -52,6 +52,8 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
     robot0_eef_pos = torch.tensor(state[28:31], dtype=torch.float32).to(device)[None]
     robot0_eef_quat = torch.tensor(obs['quat_obs'], dtype=torch.float32).to(device)
     robot0_gripper_qpos = torch.tensor(robot_qpos_vec[-16:], dtype=torch.float32).to(device)[None]
+    observed_pc_seg_gt = torch.tensor(obs['instance_1-seg_gt'], dtype=torch.float32).to(device)
+    imagined_robot_pc_seg_gt = torch.tensor(obs['imagination_robot'][:, :, 3:], dtype=torch.float32).to(device)
 
     if obs_dict is None:  # First step
         obs_dict = {
@@ -61,6 +63,8 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
             'robot0_eef_pos': torch.cat([robot0_eef_pos] * n_obs_steps, dim=0)[None],
             'robot0_eef_quat': torch.cat([robot0_eef_quat] * n_obs_steps, dim=0)[None],
             'robot0_gripper_qpos': torch.cat([robot0_gripper_qpos] * n_obs_steps, dim=0)[None],
+            'observed_pc_seg-gt': torch.cat([observed_pc_seg_gt] * n_obs_steps, dim=0)[None],
+            'imagined_robot_pc_seg-gt': torch.cat([imagined_robot_pc_seg_gt] * n_obs_steps, dim=0)[None],
         }
     else:  # Succeeding steps
         new_values = {
@@ -70,6 +74,8 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
             'robot0_eef_pos': robot0_eef_pos,
             'robot0_eef_quat': robot0_eef_quat,
             'robot0_gripper_qpos': robot0_gripper_qpos,
+            'observed_pc_seg-gt': observed_pc_seg_gt,
+            'imagined_robot_pc_seg-gt': imagined_robot_pc_seg_gt,
         }
         bs, n_points, _ = new_values["point_cloud"].shape
         obs_dict["point_cloud"] = obs_dict["point_cloud"][:,:,:n_points,:] # remove imagin pcd concatenation
@@ -80,7 +86,7 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
 
 
 
-def prepare_dp3(device, checkpoint_path, n_obs_steps, pointcloud_encoder_cfg):
+def prepare_dp3(device, checkpoint_path, n_obs_steps, policy_cfg):
     # Recreate DP3 configuration (based on train_dp3.py)
     shape_meta = {
         'obs': {
@@ -89,11 +95,12 @@ def prepare_dp3(device, checkpoint_path, n_obs_steps, pointcloud_encoder_cfg):
             'goal_gripper_pcd': {'shape': (96, 3)},
             'robot0_eef_pos': {'shape': (3,)},
             'robot0_eef_quat': {'shape': (4,)},
-            'robot0_gripper_qpos': {'shape': (16,)}
+            'robot0_gripper_qpos': {'shape': (16,)},
+            'observed_pc_seg-gt': {'shape': (512, 4)},
+            'imagined_robot_pc_seg-gt': {'shape': (96, 4)},
         },
         'action': {'shape': (22,)}
     }
-    #noise_scheduler = DDIMScheduler(num_train_timesteps=100)
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
     n_action_steps = 8
     horizon = 16
@@ -104,9 +111,9 @@ def prepare_dp3(device, checkpoint_path, n_obs_steps, pointcloud_encoder_cfg):
         horizon=horizon,
         n_action_steps=n_action_steps,
         n_obs_steps=n_obs_steps,
-        pointcloud_encoder_cfg=pointcloud_encoder_cfg,
-        pointnet_type="act3d",
-        goal_mode='None',
+        pointcloud_encoder_cfg=policy_cfg.pointcloud_encoder_cfg,
+        pointnet_type=policy_cfg.pointnet_type,
+        goal_mode=policy_cfg.goal_mode,
     ).to(device)
 
     # Load the checkpoint
@@ -155,7 +162,7 @@ def main(cfg):
                             check_obs_space=False, force_load=True)
         policy.set_random_seed(eval_cfg.seed)
     elif eval_cfg.model == "dp3":
-        policy = prepare_dp3(device, checkpoint_path, N_OBS_STEPS, cfg.policy.pointcloud_encoder_cfg)
+        policy = prepare_dp3(device, checkpoint_path, N_OBS_STEPS, cfg.policy)
     else:
         raise NotImplementedError
 
