@@ -1,5 +1,6 @@
 import os
 import pickle
+from dexart_il_wrapper import DexArt_IL_Wrapper
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import torch.optim as optim
@@ -171,17 +172,21 @@ def main(cfg):
 
     pointcloud_encoder_cfg = cfg.policy.get("pointcloud_encoder_cfg", None)
 
-    model = DP3(
-        shape_meta=shape_meta,
-        noise_scheduler=noise_scheduler,
-        horizon=horizon,
-        n_action_steps=n_action_steps,
-        n_obs_steps=n_obs_steps,
-        pointcloud_encoder_cfg=pointcloud_encoder_cfg,
-        pointnet_type=cfg.policy.pointnet_type,
-        goal_mode=cfg.policy.goal_mode,
-    ).to(device)
-
+    if cfg.policy.type == "dp3":
+        model = DP3(
+            shape_meta=shape_meta,
+            noise_scheduler=noise_scheduler,
+            horizon=horizon,
+            n_action_steps=n_action_steps,
+            n_obs_steps=n_obs_steps,
+            pointcloud_encoder_cfg=pointcloud_encoder_cfg,
+            pointnet_type=cfg.policy.pointnet_type,
+            goal_mode=cfg.policy.goal_mode,
+        ).to(device)
+    elif cfg.policy.type == "dexart":
+        model = DexArt_IL_Wrapper().to(device)
+    else:
+        raise NotImplementedError
 
     normalizer = build_normalizer(dataset)
     model.set_normalizer(normalizer)

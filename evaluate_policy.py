@@ -20,6 +20,7 @@ import pickle
 import torch
 from equi_diffpo.policy.dp3 import DP3
 from diffusers.schedulers import DDPMScheduler, DDIMScheduler
+from dexart_il_wrapper import DexArt_IL_Wrapper
 import collections
 from collections import deque
 #from train_dp3 import set_random_quaternion
@@ -122,6 +123,14 @@ def prepare_dp3(device, checkpoint_path, n_obs_steps, policy_cfg):
     policy.eval()  # Set to evaluation mode
     return policy
 
+def prepare_dexart(device, checkpoint_path):
+    policy = DexArt_IL_Wrapper().to(device)
+    # Load the checkpoint
+    state_dict = torch.load(f"{utils.get_original_cwd()}/{checkpoint_path}", map_location=device)
+    policy.load_state_dict(state_dict)
+    policy.eval()  # Set to evaluation mode
+    return policy
+
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="eval_dexart")
 def main(cfg):
     """
@@ -163,6 +172,8 @@ def main(cfg):
         policy.set_random_seed(eval_cfg.seed)
     elif eval_cfg.model == "dp3":
         policy = prepare_dp3(device, checkpoint_path, N_OBS_STEPS, cfg.policy)
+    elif eval_cfg.model == "dexart":
+        policy = prepare_dexart(device, checkpoint_path)
     else:
         raise NotImplementedError
 
@@ -214,6 +225,11 @@ def main(cfg):
                                 actions = result['action'].squeeze()
                                 action_queue.extend(actions.tolist())
                         action = np.array(action_queue.popleft()).astype(np.float32)
+                    elif eval_cfg.model == "dexart":
+                        obs_dict = get_dp3_obs(obs_dict, obs, device, N_OBS_STEPS)
+                        with torch.no_grad():
+                            result = policy.predict_action(obs_dict)
+                        action = result['action'].squeeze().cpu().numpy().astype(np.float32)
                     else:
                         raise NotImplementedError
 

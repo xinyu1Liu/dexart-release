@@ -24,6 +24,7 @@ load_ckpt_path: null
 with_scene_seg: True
 
 policy:
+  type: "dp3" # dp3 or dexart (i.e. pointnet+ mlp)
   _target_: equi_diffpo.policy.dp3.DP3
   use_point_crop: true
   condition_type: film
