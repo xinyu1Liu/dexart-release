@@ -20,6 +20,7 @@ import random
 import torch
 from equi_diffpo.policy.dp3 import DP3
 from diffusers.schedulers import DDPMScheduler, DDIMScheduler
+from dexart_il_wrapper import DexArt_IL_Wrapper
 import collections
 from collections import deque
 #from train_dp3 import set_random_quaternion
@@ -52,6 +53,8 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
     robot0_eef_pos = torch.tensor(state[28:31], dtype=torch.float32).to(device)[None]
     robot0_eef_quat = torch.tensor(obs['quat_obs'], dtype=torch.float32).to(device)
     robot0_gripper_qpos = torch.tensor(robot_qpos_vec[-16:], dtype=torch.float32).to(device)[None]
+    observed_pc_seg_gt = torch.tensor(obs['instance_1-seg_gt'], dtype=torch.float32).to(device)
+    imagined_robot_pc_seg_gt = torch.tensor(obs['imagination_robot'][:, :, 3:], dtype=torch.float32).to(device)
 
     if obs_dict is None:  # First step
         obs_dict = {
@@ -61,6 +64,8 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
             'robot0_eef_pos': torch.cat([robot0_eef_pos] * n_obs_steps, dim=0)[None],
             'robot0_eef_quat': torch.cat([robot0_eef_quat] * n_obs_steps, dim=0)[None],
             'robot0_gripper_qpos': torch.cat([robot0_gripper_qpos] * n_obs_steps, dim=0)[None],
+            'observed_pc_seg-gt': torch.cat([observed_pc_seg_gt] * n_obs_steps, dim=0)[None],
+            'imagined_robot_pc_seg-gt': torch.cat([imagined_robot_pc_seg_gt] * n_obs_steps, dim=0)[None],
         }
     else:  # Succeeding steps
         new_values = {
@@ -70,6 +75,8 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
             'robot0_eef_pos': robot0_eef_pos,
             'robot0_eef_quat': robot0_eef_quat,
             'robot0_gripper_qpos': robot0_gripper_qpos,
+            'observed_pc_seg-gt': observed_pc_seg_gt,
+            'imagined_robot_pc_seg-gt': imagined_robot_pc_seg_gt,
         }
         bs, n_points, _ = new_values["point_cloud"].shape
         obs_dict["point_cloud"] = obs_dict["point_cloud"][:,:,:n_points,:] # remove imagin pcd concatenation
@@ -102,6 +109,14 @@ def prepare_dp3(cfg, device, checkpoint_path):
     
     return model
 
+
+def prepare_dexart(device, checkpoint_path):
+    policy = DexArt_IL_Wrapper().to(device)
+    # Load the checkpoint
+    state_dict = torch.load(f"{utils.get_original_cwd()}/{checkpoint_path}", map_location=device)
+    policy.load_state_dict(state_dict)
+    policy.eval()  # Set to evaluation mode
+    return policy
 
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="eval_dexart")
 def main(cfg):
@@ -143,7 +158,9 @@ def main(cfg):
                             check_obs_space=False, force_load=True)
         policy.set_random_seed(eval_cfg.seed)
     elif eval_cfg.model == "dp3":
-        policy = prepare_dp3(cfg, device, checkpoint_path)
+        policy = prepare_dp3(device, checkpoint_path, N_OBS_STEPS, cfg.policy)
+    elif eval_cfg.model == "dexart":
+        policy = prepare_dexart(device, checkpoint_path)
     else:
         raise NotImplementedError
 
@@ -195,6 +212,11 @@ def main(cfg):
                                 actions = result['action'].squeeze()
                                 action_queue.extend(actions.tolist())
                         action = np.array(action_queue.popleft()).astype(np.float32)
+                    elif eval_cfg.model == "dexart":
+                        obs_dict = get_dp3_obs(obs_dict, obs, device, N_OBS_STEPS)
+                        with torch.no_grad():
+                            result = policy.predict_action(obs_dict)
+                        action = result['action'].squeeze().cpu().numpy().astype(np.float32)
                     else:
                         raise NotImplementedError
 

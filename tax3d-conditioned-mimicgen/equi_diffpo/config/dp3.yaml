@@ -33,8 +33,10 @@ keypoint_visible_rate: 1.0
 obs_as_global_cond: True
 data_dir: "/data/xinyu/demo_dexart_Jun13/laptop"
 load_ckpt_path: null
+with_scene_seg: True
 
 policy:
+  type: "dp3" # dp3 or dexart (i.e. pointnet+ mlp)
   _target_: equi_diffpo.policy.dp3.DP3
   use_point_crop: true
   condition_type: film
@@ -42,15 +44,15 @@ policy:
   use_mid_condition: true
   use_up_condition: true
   goal_mode: None
-  
+
   diffusion_step_embed_dim: 128
   down_dims:
-  - 512
-  - 1024
-  - 2048
+    - 512
+    - 1024
+    - 2048
   crop_shape:
-  - 80
-  - 80
+    - 80
+    - 80
   encoder_output_dim: 64
   horizon: ${horizon}
   kernel_size: 5
@@ -69,7 +71,6 @@ policy:
     steps_offset: 0
     prediction_type: sample
 
-
   num_inference_steps: 10
   obs_as_global_cond: true
   shape_meta: ${shape_meta}
@@ -77,14 +78,13 @@ policy:
   use_pc_color: true
   pointnet_type: "act3d"
 
-
   pointcloud_encoder_cfg:
-    in_channels: 3
+    in_channels: 9
     out_channels: ${policy.encoder_output_dim}
     use_layernorm: true
     final_norm: layernorm # layernorm, none
     normal_channel: false
-
+    vision_encoder_type: mlp
 
 ema:
   _target_: equi_diffpo.model.diffusion.ema_model.EMAModel
@@ -133,7 +133,6 @@ training:
   max_val_steps: null
   tqdm_interval_sec: 1.0
 
-
 enable_wandb: False
 logging:
   project: dp3_${task_name}
@@ -144,14 +143,13 @@ logging:
   id: null
   group: null
 
-
 checkpoint:
   save_ckpt: True # if True, save checkpoint every checkpoint_every
   topk:
     monitor_key: test_mean_score
     mode: max
     k: 1
-    format_str: 'epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt'
+    format_str: "epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt"
   save_last_ckpt: True # this only saves when save_ckpt is True
   save_last_snapshot: False
 
