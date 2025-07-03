@@ -4,7 +4,7 @@ import pickle
 import time
 import os
 
-with open("/data/xinyu/demo_dexart_Jun18/laptop/demo_0.pkl", "rb") as f:
+with open("data/outputs/2025.06.25/13.19.34_train_dp3_laptop/demo_dp3/laptop/failure_demo/demo_4.pkl", "rb") as f:
     demo_data = pickle.load(f)
 
 output_dir = "frames"

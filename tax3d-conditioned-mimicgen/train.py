@@ -4,6 +4,10 @@ Training:
 python train.py --config-name=train_diffusion_lowdim_workspace
 """
 
+# python tax3d-conditioned-mimicgen/train.py --config-name=dp3 task_name=laptop n_demo=1000 policy.pointnet_type=act3d  policy.goal_mode=None training.seed=1
+# export PYTHONPATH=/home/xinyul5/tax3d-conditioned-mimicgen:$PYTHONPATH
+
+
 import sys
 # use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
@@ -31,6 +35,7 @@ max_steps = {
     'can': 400,
     'lift': 400,
     'square': 400,
+    'laptop': 400
 }
 
 def get_ws_x_center(task_name):
@@ -51,8 +56,8 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 @hydra.main(
     version_base=None,
-    config_path=str(pathlib.Path(__file__).parent.joinpath(
-        'equi_diffpo','config'))
+    config_path="equi_diffpo/config",
+    config_name="dp3"
 )
 def main(cfg: OmegaConf):
     # resolve immediately so all the ${now:} resolvers
