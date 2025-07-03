@@ -13,7 +13,7 @@ import torch
 import dill
 from omegaconf import OmegaConf
 import pathlib
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
 import copy
 import random
 import wandb
@@ -22,6 +22,7 @@ import numpy as np
 from termcolor import cprint
 import shutil
 import time
+import collections
 import threading
 from hydra.core.hydra_config import HydraConfig
 from equi_diffpo.policy.dp3 import DP3
@@ -30,14 +31,16 @@ from equi_diffpo.policy.toolflownet_diff import ToolFlowNetDiff
 from equi_diffpo.dataset.base_dataset import BaseImageDataset
 from equi_diffpo.env_runner.base_image_runner import BaseImageRunner
 from equi_diffpo.common.checkpoint_util import TopKCheckpointManager
+from equi_diffpo.model.common.normalizer import LinearNormalizer
 from equi_diffpo.common.pytorch_util import dict_apply, optimizer_to
 from equi_diffpo.model.diffusion.ema_model import EMAModel
 from equi_diffpo.model.common.lr_scheduler import get_scheduler
+from equi_diffpo.dataset.DP3DexArtDataset import DP3DexArtDataset
 import pickle
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
-class TrainDP3Workspace:
+class TrainDP3WorkspaceNEW:
     include_keys = ['global_step', 'epoch']
     exclude_keys = tuple()
 
@@ -71,6 +74,32 @@ class TrainDP3Workspace:
         self.global_step = 0
         self.epoch = 0
 
+
+    def build_normalizer(self, dataset):
+        obs_accum = collections.defaultdict(list)
+        action_accum = []
+
+        for sample in dataset:
+            obs = sample["obs"]
+            action = sample["action"]  
+
+            for k, v in obs.items():
+                obs_accum[k].append(v.reshape(-1, v.shape[-1]))
+            action_accum.append(action.reshape(-1, action.shape[-1]))
+
+        obs_stacked = {k: torch.cat(v_list, dim=0).numpy() for k, v_list in obs_accum.items()}
+        actions_stacked = torch.cat(action_accum, dim=0).numpy()
+
+        normalizer = LinearNormalizer()
+        normalizer.fit(data=obs_stacked, last_n_dims=1, mode='limits')
+
+        action_normalizer = LinearNormalizer()
+        action_normalizer.fit(data={"action": actions_stacked}, last_n_dims=1, mode='limits')
+        normalizer['action'] = action_normalizer['action']
+
+        return normalizer
+
+
     def run(self):
         cfg = copy.deepcopy(self.cfg)
         
@@ -90,7 +119,7 @@ class TrainDP3Workspace:
             RUN_CKPT = True
             verbose = False
         
-        RUN_VALIDATION = False # reduce time cost
+        RUN_VALIDATION = True # reduce time cost
         
         # resume training
         if cfg.training.resume:
@@ -99,18 +128,35 @@ class TrainDP3Workspace:
                 print(f"Resuming from checkpoint {lastest_ckpt_path}")
                 self.load_checkpoint(path=lastest_ckpt_path)
 
-        # configure dataset
-        dataset: BaseImageDataset
-        dataset = hydra.utils.instantiate(cfg.task.dataset)
+        # # configure dataset
+        # dataset: BaseImageDataset
+        # dataset = hydra.utils.instantiate(cfg.task.dataset)
+        # assert isinstance(dataset, BaseImageDataset), print(f"dataset must be BaseDataset, got {type(dataset)}")
+        # train_dataloader = DataLoader(dataset, **cfg.dataloader)
+        # normalizer = dataset.get_normalizer()
 
-        assert isinstance(dataset, BaseImageDataset), print(f"dataset must be BaseDataset, got {type(dataset)}")
-        train_dataloader = DataLoader(dataset, **cfg.dataloader)
-        normalizer = dataset.get_normalizer()
+        # # configure validation dataset
+        # val_dataset = dataset.get_validation_dataset()
+        # val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
 
-        # configure validation dataset
-        val_dataset = dataset.get_validation_dataset()
-        val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        dataset = DP3DexArtDataset(cfg.data_dir, goal_mode=cfg.policy.goal_mode)
+    
+        total_size = len(dataset)
+        train_size = int(0.8 * total_size)
+        val_size = int(0.1 * total_size)
+        test_size = total_size - train_size - val_size
 
+        train_dataset, val_dataset, test_dataset = random_split(
+            dataset,
+            [train_size, val_size, test_size],
+            generator=torch.Generator().manual_seed(cfg.training.seed)
+        )
+
+        train_dataloader = DataLoader(train_dataset, batch_size=cfg.dataloader.batch_size, shuffle=True, num_workers=cfg.dataloader.num_workers)
+        val_dataloader = DataLoader(val_dataset, batch_size=cfg.dataloader.batch_size, shuffle=False, num_workers=cfg.dataloader.num_workers)
+        test_dataloader = DataLoader(test_dataset, batch_size=cfg.dataloader.batch_size, shuffle=False, num_workers=cfg.dataloader.num_workers)
+        
+        normalizer = self.build_normalizer(dataset)
         self.model.set_normalizer(normalizer)
         if cfg.training.use_ema:
             self.ema_model.set_normalizer(normalizer)
@@ -136,14 +182,15 @@ class TrainDP3Workspace:
                 model=self.ema_model)
 
         # configure env
-        env_runner: BaseImageRunner
-        env_runner = hydra.utils.instantiate(
-            cfg.task.env_runner,
-            output_dir=self.output_dir,
-            tax3d_cfg=cfg.model)
+        env_runner = None
+        # env_runner: BaseImageRunner
+        # env_runner = hydra.utils.instantiate(
+        #     cfg.task.env_runner,
+        #     output_dir=self.output_dir,
+        #     tax3d_cfg=cfg.model)
 
-        if env_runner is not None:
-            assert isinstance(env_runner, BaseImageRunner)
+        # if env_runner is not None:
+        #     assert isinstance(env_runner, BaseImageRunner)
         
         if cfg.enable_wandb:
             cfg.logging.name = str(cfg.logging.name)
@@ -270,8 +317,7 @@ class TrainDP3Workspace:
                 # log all
                 step_log.update(runner_log)
 
-            
-                
+
             # run validation
             if (self.epoch % cfg.training.val_every) == 0 and RUN_VALIDATION:
                 with torch.no_grad():
@@ -289,6 +335,7 @@ class TrainDP3Workspace:
                         val_loss = torch.mean(torch.tensor(val_losses)).item()
                         # log epoch average validation loss
                         step_log['val_loss'] = val_loss
+                        print(val_loss)
 
             # run diffusion sampling on a training batch
             if (self.epoch % cfg.training.sample_every) == 0:
@@ -320,6 +367,10 @@ class TrainDP3Workspace:
                 step_log['test_mean_score'] = - train_loss
                 
             # checkpoint
+
+            if (self.epoch % 40) == 0:
+                self.save_checkpoint(path=f"checkpoints/epoch_{self.epoch:05d}.ckpt")
+
             if (self.epoch % cfg.training.checkpoint_every) == 0 and cfg.checkpoint.save_ckpt:
                 # checkpointing
                 if cfg.checkpoint.save_last_ckpt:
@@ -543,7 +594,7 @@ class TrainDP3Workspace:
         'equi_diffpo', 'config'))
 )
 def main(cfg):
-    workspace = TrainDP3Workspace(cfg)
+    workspace = TrainDP3WorkspaceNEW(cfg)
     workspace.run()
 
 if __name__ == "__main__":
