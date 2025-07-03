@@ -4,7 +4,7 @@ Training:
 python train.py --config-name=train_diffusion_lowdim_workspace
 """
 
-# python tax3d-conditioned-mimicgen/train_NEW.py --config-name=dp3_NEW task_name=laptop n_demo=1000 policy.pointnet_type=act3d  policy.goal_mode=None training.seed=1
+# python tax3d-conditioned-mimicgen/train.py --config-name=dp3 task_name=laptop n_demo=1000 policy.pointnet_type=act3d  policy.goal_mode=None training.seed=1
 # export PYTHONPATH=/home/xinyul5/tax3d-conditioned-mimicgen:$PYTHONPATH
 
 
@@ -57,7 +57,7 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 @hydra.main(
     version_base=None,
     config_path="equi_diffpo/config",
-    config_name="dp3_NEW"
+    config_name="dp3"
 )
 def main(cfg: OmegaConf):
     # resolve immediately so all the ${now:} resolvers

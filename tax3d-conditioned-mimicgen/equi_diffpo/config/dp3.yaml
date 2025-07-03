@@ -2,7 +2,7 @@ defaults:
   - _self_
 
 name: train_dp3
-_target_: equi_diffpo.workspace.train_dp3_workspace_NEW.TrainDP3WorkspaceNEW
+_target_: equi_diffpo.workspace.train_dp3_workspace.TrainDP3WorkspaceNEW
 
 shape_meta: 
   obs:
@@ -31,7 +31,7 @@ n_latency_steps: 0
 dataset_obs_steps: ${n_obs_steps}
 keypoint_visible_rate: 1.0
 obs_as_global_cond: True
-data_dir: "/data/xinyu/demo_dexart_Jun18/laptop"
+data_dir: "/data/xinyu/demo_dexart_Jun13/laptop"
 load_ckpt_path: null
 
 policy:

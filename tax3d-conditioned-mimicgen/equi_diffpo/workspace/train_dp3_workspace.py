@@ -369,7 +369,8 @@ class TrainDP3WorkspaceNEW:
             # checkpoint
 
             if (self.epoch % 40) == 0:
-                self.save_checkpoint(path=f"checkpoints/epoch_{self.epoch:05d}.ckpt")
+                path = pathlib.Path(self.output_dir).joinpath('checkpoints', f'{self.epoch:03d}.ckpt')
+                self.save_checkpoint(path=path)
 
             if (self.epoch % cfg.training.checkpoint_every) == 0 and cfg.checkpoint.save_ckpt:
                 # checkpointing

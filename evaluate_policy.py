@@ -16,7 +16,7 @@ from stable_baselines3 import PPO
 from examples.train import get_3d_policy_kwargs
 from tqdm import tqdm
 import pickle
-
+import random
 import torch
 from equi_diffpo.policy.dp3 import DP3
 from diffusers.schedulers import DDPMScheduler, DDIMScheduler
@@ -78,47 +78,35 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
             obs_dict[key] = torch.cat((obs_dict[key][:, 1:], new_values[key].unsqueeze(0)), dim=1)  # Slide window
     return obs_dict
 
+def prepare_dp3(cfg, device, checkpoint_path):
+    seed = cfg.training.seed
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
+    model: DP3 = hydra.utils.instantiate(cfg.policy).to(device)
 
-def prepare_dp3(device, checkpoint_path, n_obs_steps, pointcloud_encoder_cfg):
-    # Recreate DP3 configuration (based on train_dp3.py)
-    shape_meta = {
-        'obs': {
-            'point_cloud': {'shape': (512, 3)},
-            'imagin_robot': {'shape': (96, 3)},
-            'goal_gripper_pcd': {'shape': (96, 3)},
-            'robot0_eef_pos': {'shape': (3,)},
-            'robot0_eef_quat': {'shape': (4,)},
-            'robot0_gripper_qpos': {'shape': (16,)}
-        },
-        'action': {'shape': (22,)}
-    }
-    #noise_scheduler = DDIMScheduler(num_train_timesteps=100)
-    noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
-    n_action_steps = 8
-    horizon = 16
+    checkpoint = torch.load(f"{utils.get_original_cwd()}/{checkpoint_path}", map_location=device)
 
-    policy = DP3(
-        shape_meta=shape_meta,
-        noise_scheduler=noise_scheduler,
-        horizon=horizon,
-        n_action_steps=n_action_steps,
-        n_obs_steps=n_obs_steps,
-        pointcloud_encoder_cfg=pointcloud_encoder_cfg,
-        pointnet_type="act3d",
-        goal_mode='None',
-    ).to(device)
+    ## Checkpoint top-level keys: dict_keys(['cfg', 'state_dicts', 'pickles'])
+    ## Keys in checkpoint['state_dicts']: dict_keys(['model', 'ema_model', 'optimizer'])
 
-    # Load the checkpoint
-    state_dict = torch.load(f"{utils.get_original_cwd()}/{checkpoint_path}", map_location=device)
-    policy.load_state_dict(state_dict)
-    policy.eval()  # Set to evaluation mode
-    return policy
+    if cfg.training.use_ema and 'ema_model' in checkpoint['state_dicts']:
+        print("Loading EMA weights for evaluation")
+        model.load_state_dict(checkpoint['state_dicts']['ema_model'])
+    else:
+        print("Loading standard model weights")
+        model.load_state_dict(checkpoint['state_dicts']['model'])
+    
+    model.eval()  # set model to evaluation mode
+    
+    return model
+
 
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="eval_dexart")
 def main(cfg):
     """
-    python evaluate_policy.py eval.task_name=laptop eval.checkpoint_path=data/outputs/2025.06.08/00.11.18_train_dp3_stack_d1/dp3_epoch_11.pt eval.eval_per_instance=100 eval.model=dp3
+    python evaluate_policy_NEW.py eval.task_name=laptop eval.checkpoint_path=checkpoints/epoch_00160.ckpt eval.eval_per_instance=10 eval.model=dp3
     """
     eval_cfg = cfg.eval
 
@@ -155,7 +143,7 @@ def main(cfg):
                             check_obs_space=False, force_load=True)
         policy.set_random_seed(eval_cfg.seed)
     elif eval_cfg.model == "dp3":
-        policy = prepare_dp3(device, checkpoint_path, N_OBS_STEPS, cfg.policy.pointcloud_encoder_cfg)
+        policy = prepare_dp3(cfg, device, checkpoint_path)
     else:
         raise NotImplementedError
 
