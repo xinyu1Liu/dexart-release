@@ -121,7 +121,7 @@ def prepare_dexart(device, checkpoint_path):
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="eval_dexart")
 def main(cfg):
     """
-    python evaluate_policy_NEW.py eval.task_name=laptop eval.checkpoint_path=checkpoints/epoch_00160.ckpt eval.eval_per_instance=10 eval.model=dp3
+    python evaluate_policy.py eval.task_name=laptop eval.checkpoint_path=checkpoints/epoch_00160.ckpt eval.eval_per_instance=10 eval.model=dp3
     """
     eval_cfg = cfg.eval
 
@@ -158,7 +158,7 @@ def main(cfg):
                             check_obs_space=False, force_load=True)
         policy.set_random_seed(eval_cfg.seed)
     elif eval_cfg.model == "dp3":
-        policy = prepare_dp3(device, checkpoint_path, N_OBS_STEPS, cfg.policy)
+        policy = prepare_dp3(cfg, device, checkpoint_path)
     elif eval_cfg.model == "dexart":
         policy = prepare_dexart(device, checkpoint_path)
     else:
