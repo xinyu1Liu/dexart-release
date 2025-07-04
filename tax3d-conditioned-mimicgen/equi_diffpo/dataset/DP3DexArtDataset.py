@@ -71,7 +71,7 @@ class DP3DexArtDataset(Dataset):
         }
         if self.goal_mode == 'pointcloud_oracle':
             goal_obs_imagin, goal_obs_env = self.getGoal(traj, start_idx)
-            obs['goal_gripper_pcd'] = torch.stack([torch.tensor(goal_obs_imagin, dtype=torch.float32)] * self.n_obs_steps),
+            obs['goal_gripper_pcd'] = torch.stack([torch.tensor(goal_obs_imagin, dtype=torch.float32)] * self.n_obs_steps)
         elif self.goal_mode == 'None':
             obs['goal_gripper_pcd'] = torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window])
 
