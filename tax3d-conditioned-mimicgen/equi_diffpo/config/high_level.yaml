@@ -1,0 +1,8 @@
+data_dir: "/data/xinyu/demo_dexart_Jun18/laptop"
+batch_size: 32
+num_epochs: 500
+lr: 3e-4
+
+model: "pn_plus_plus"
+loss_type: "weighted_displacement"
+goal_type: "4points"
