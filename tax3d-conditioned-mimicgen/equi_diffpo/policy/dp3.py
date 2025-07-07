@@ -222,6 +222,10 @@ class DP3(BasePolicy):
         if 'agentview_image' in obs_dict:
             del obs_dict['agentview_image']
 
+        if len(obs_dict['obs']['goal_gripper_pcd'].shape) != len(obs_dict['obs']['point_cloud'].shape):
+            obs_len = obs_dict['obs']['point_cloud'].shape[1]
+            obs_dict['obs']['goal_gripper_pcd'] = obs_dict['obs']['goal_gripper_pcd'][:, None].repeat(1, obs_len, 1, 1)
+
         # incorporate gripper mesh point cloud into the whole point cloud.
         obs_dict['point_cloud'] = torch.cat([obs_dict['point_cloud'], obs_dict['goal_gripper_pcd']], dim=-2)
         
@@ -339,6 +343,12 @@ class DP3(BasePolicy):
             B = batch['obs']['point_cloud'].shape[0]
             idx = torch.randperm(B)[:int(B/2)]
             batch['obs']['goal_gripper_pcd'][idx, ..., :3] = batch['obs']['tax3d'][idx, ...]
+
+        if len(batch['obs']['goal_gripper_pcd'].shape) != len(batch['obs']['point_cloud'].shape):
+            obs_len = batch['obs']['point_cloud'].shape[1]
+            batch['obs']['goal_gripper_pcd'] = batch['obs']['goal_gripper_pcd'][:, None].repeat(1, obs_len, 1, 1)
+
+
         batch['obs']['point_cloud'] = torch.cat([batch['obs']['point_cloud'], batch['obs']['goal_gripper_pcd']], dim=-2)
 
         # with open('debug_pointcloud_toolflownet.pkl', 'wb') as f:

@@ -7,23 +7,26 @@ sys.path.append('tax3d-conditioned-mimicgen')
 from equi_diffpo.model.vision.articubot import PointNet2_super
 import hydra
 
+def compute_weighted_displacement(scene_pcd, pred):
+    scene_pcd = scene_pcd.permute(0,2,1)
+    batch_size, num_points, _ = scene_pcd.shape
+    scene_pcd = scene_pcd[:, :, None, :3]
+
+    weights = pred[:, :, -1]  # B, N
+    # softmax the weights
+    weights = torch.nn.functional.softmax(weights, dim=1)
+
+    outputs = pred[:, :, :-1]  # B, N, 12
+    # sum the displacement of the predicted gripper point cloud according to the weights
+    pred_points = weights[:, :, None, None] * (
+        scene_pcd + outputs.reshape(batch_size, num_points, 4, 3)
+    )
+    pred_points = pred_points.sum(dim=1)
+    return pred_points
+
 def compute_high_level_loss(scene_pcd, pred, target, loss_type):
     if loss_type == "weighted_displacement":
-        scene_pcd = scene_pcd.permute(0,2,1)
-        batch_size, num_points, _ = scene_pcd.shape
-        scene_pcd = scene_pcd[:, :, None, :3]
-
-        weights = pred[:, :, -1]  # B, N
-        # softmax the weights
-        weights = torch.nn.functional.softmax(weights, dim=1)
-
-        outputs = pred[:, :, :-1]  # B, N, 12
-        # sum the displacement of the predicted gripper point cloud according to the weights
-        pred_points = weights[:, :, None, None] * (
-            scene_pcd + outputs.reshape(batch_size, num_points, 4, 3)
-        )
-        pred_points = pred_points.sum(dim=1)
-
+        pred_points = compute_weighted_displacement(scene_pcd, pred)
         loss = torch.nn.functional.mse_loss(pred_points, target)
     else:
         raise NotImplementedError

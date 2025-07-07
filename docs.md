@@ -15,3 +15,8 @@ python evaluate_policy.py eval.task_name=laptop eval.checkpoint_path=data/output
 ```
 python train_high_level.py
 ```
+
+- Eval high-level model standalone for later viz
+```
+python eval_high_level.py
+```
