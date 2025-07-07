@@ -43,7 +43,7 @@ def get_obs(obs):
 
 N_OBS_STEPS = 2
 
-def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
+def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg):
     """Observation for DP3 inference"""
     state = obs['state'].squeeze()  # shape (32,)
     robot_qpos_vec = state[:22]
@@ -64,9 +64,10 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
             'robot0_eef_pos': torch.cat([robot0_eef_pos] * n_obs_steps, dim=0)[None],
             'robot0_eef_quat': torch.cat([robot0_eef_quat] * n_obs_steps, dim=0)[None],
             'robot0_gripper_qpos': torch.cat([robot0_gripper_qpos] * n_obs_steps, dim=0)[None],
-            'observed_pc_seg-gt': torch.cat([observed_pc_seg_gt] * n_obs_steps, dim=0)[None],
-            'imagined_robot_pc_seg-gt': torch.cat([imagined_robot_pc_seg_gt] * n_obs_steps, dim=0)[None],
         }
+        if eval_with_scene_seg:
+            obs_dict['observed_pc_seg-gt']: torch.cat([observed_pc_seg_gt] * n_obs_steps, dim=0)[None]
+            obs_dict['imagined_robot_pc_seg-gt']: torch.cat([imagined_robot_pc_seg_gt] * n_obs_steps, dim=0)[None]
     else:  # Succeeding steps
         new_values = {
             'point_cloud': point_cloud,
@@ -75,14 +76,17 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps):
             'robot0_eef_pos': robot0_eef_pos,
             'robot0_eef_quat': robot0_eef_quat,
             'robot0_gripper_qpos': robot0_gripper_qpos,
-            'observed_pc_seg-gt': observed_pc_seg_gt,
-            'imagined_robot_pc_seg-gt': imagined_robot_pc_seg_gt,
         }
-        bs, n_points, _ = new_values["point_cloud"].shape
+        if eval_with_scene_seg:
+            new_values['observed_pc_seg-gt'] = observed_pc_seg_gt,
+            new_values['imagined_robot_pc_seg-gt'] = imagined_robot_pc_seg_gt
+        
+        obs, n_points, _ = new_values["point_cloud"].shape
         obs_dict["point_cloud"] = obs_dict["point_cloud"][:,:,:n_points,:] # remove imagin pcd concatenation
 
         for key in obs_dict.keys():
             obs_dict[key] = torch.cat((obs_dict[key][:, 1:], new_values[key].unsqueeze(0)), dim=1)  # Slide window
+    
     return obs_dict
 
 def prepare_dp3(cfg, device, checkpoint_path):
@@ -166,6 +170,7 @@ def main(cfg):
 
     eval_instances = len(env.instance_list)
     eval_per_instance = eval_cfg.eval_per_instance
+    eval_with_scene_seg = cfg.with_scene_seg
     success_list = list()
     reward_list = list()
     progress_list = list()
@@ -203,7 +208,7 @@ def main(cfg):
                     if eval_cfg.model == "ppo":
                         action = policy.predict(observation=obs, deterministic=True)[0]
                     elif eval_cfg.model == "dp3":
-                        obs_dict = get_dp3_obs(obs_dict, obs, device, N_OBS_STEPS)
+                        obs_dict = get_dp3_obs(obs_dict, obs, device, N_OBS_STEPS, eval_with_scene_seg)
 
                         # Receding horizon control
                         if len(action_queue) == 0:
