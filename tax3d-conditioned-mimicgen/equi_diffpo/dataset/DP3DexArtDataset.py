@@ -14,6 +14,7 @@ import hydra
 import collections
 import open3d as o3d
 import numpy as np
+from tqdm import tqdm
 
 #import matplotlib
 #matplotlib.use("Agg")
@@ -27,7 +28,7 @@ class DP3DexArtDataset(Dataset):
         self.goal_mode = goal_mode
         self.with_scene_seg = with_scene_seg
 
-        for fname in os.listdir(data_dir):
+        for fname in tqdm(os.listdir(data_dir), desc="loading dataset"):
             if fname.endswith(".pkl"):
                 with open(os.path.join(data_dir, fname), "rb") as f:
                     traj = pickle.load(f)
@@ -56,7 +57,6 @@ class DP3DexArtDataset(Dataset):
 
         return goal_obs_imagin, goal_obs_env
 
-
     def __getitem__(self, idx):
         traj, start_idx = self.samples[idx]
         obs_window = traj[start_idx - self.n_obs_steps : start_idx]
@@ -70,10 +70,10 @@ class DP3DexArtDataset(Dataset):
             'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_window]),
         }
         if self.goal_mode == 'pointcloud_oracle':
-            goal_obs_imagin, goal_obs_env = self.getGoal(traj, start_idx)
-            obs['goal_gripper_pcd'] = torch.stack([torch.tensor(goal_obs_imagin, dtype=torch.float32)] * self.n_obs_steps)
+            goal_obs_imagin = self.getGoal(traj, start_idx)
+            obs['goal_gripper_pcd'] = torch.tensor(goal_obs_imagin, dtype=torch.float32)
         elif self.goal_mode == 'None':
-            obs['goal_gripper_pcd'] = torch.stack([torch.tensor(o["obs"]['imagined_robot_point_cloud'], dtype=torch.float32) for o in obs_window])
+            obs['goal_gripper_pcd'] = torch.tensor(traj[start_idx]["obs"]['imagined_robot_point_cloud'], dtype=torch.float32)
 
         if self.with_scene_seg:
             obs['observed_pc_seg-gt'] = torch.stack([torch.tensor(o["obs"]['observed_pc_seg-gt'], dtype=torch.float32) for o in obs_window])
@@ -85,3 +85,20 @@ class DP3DexArtDataset(Dataset):
             'obs': obs,
             'action': action
         }
+
+def get_dataloaders(dataset, batch_size):
+    total_size = len(dataset)
+    train_size = int(0.8 * total_size)
+    val_size = int(0.1 * total_size)
+    test_size = total_size - train_size - val_size
+
+    train_dataset, val_dataset, test_dataset = random_split(
+        dataset,
+        [train_size, val_size, test_size],
+        generator=torch.Generator().manual_seed(42)
+    )
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
+    return train_loader, val_loader, test_loader
