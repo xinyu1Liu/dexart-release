@@ -9,3 +9,8 @@ eval:
   seed: 100
   use_test_set: false
   model: ppo # e.g., "dp3"
+
+  high_level:
+    model: "pn_plus_plus"
+    goal_type: "4points"
+    ckpt_file: null

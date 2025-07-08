@@ -222,9 +222,9 @@ class DP3(BasePolicy):
         if 'agentview_image' in obs_dict:
             del obs_dict['agentview_image']
 
-        if len(obs_dict['obs']['goal_gripper_pcd'].shape) != len(obs_dict['obs']['point_cloud'].shape):
-            obs_len = obs_dict['obs']['point_cloud'].shape[1]
-            obs_dict['obs']['goal_gripper_pcd'] = obs_dict['obs']['goal_gripper_pcd'][:, None].repeat(1, obs_len, 1, 1)
+        if len(obs_dict['goal_gripper_pcd'].shape) != len(obs_dict['point_cloud'].shape):
+            obs_len = obs_dict['point_cloud'].shape[1]
+            obs_dict['goal_gripper_pcd'] = obs_dict['goal_gripper_pcd'][:, None].repeat(1, obs_len, 1, 1)
 
         # incorporate gripper mesh point cloud into the whole point cloud.
         obs_dict['point_cloud'] = torch.cat([obs_dict['point_cloud'], obs_dict['goal_gripper_pcd']], dim=-2)

@@ -37,7 +37,7 @@ for step in tqdm(eval_data):
         pred = model(obs)
     pred_points = compute_weighted_displacement(obs, pred)
 
-    step["pred_goal"] = pred_points.squeeze().cpu().numpy()
+    step["goal"] = pred_points.squeeze().cpu().numpy()
     output_data.append(step)
 
 

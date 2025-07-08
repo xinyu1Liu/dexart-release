@@ -23,6 +23,8 @@ from diffusers.schedulers import DDPMScheduler, DDIMScheduler
 from dexart_il_wrapper import DexArt_IL_Wrapper
 import collections
 from collections import deque
+from equi_diffpo.model.vision.articubot import PointNet2_super
+from train_high_level import compute_weighted_displacement
 #from train_dp3 import set_random_quaternion
 
 def get_obs(obs):
@@ -41,20 +43,40 @@ def get_obs(obs):
     }
     return obs
 
+def extract_model_input(obs_batch, device):
+    pcd = torch.from_numpy(obs_batch["instance_1-point_cloud"])
+    imagined_pcd = torch.from_numpy(obs_batch["imagination_robot"][:,:,:3])
+    obs_ = torch.cat([pcd, imagined_pcd], axis=1).permute(0,2,1).to(device).float()
+    return obs_
+
 N_OBS_STEPS = 2
 
-def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg):
+def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg, policy_cfg, high_level_model=None):
     """Observation for DP3 inference"""
     state = obs['state'].squeeze()  # shape (32,)
     robot_qpos_vec = state[:22]
     point_cloud = torch.tensor(obs['instance_1-point_cloud'], dtype=torch.float32).to(device)
     imagin_robot = torch.tensor(obs['imagination_robot'][:, :, :3], dtype=torch.float32).to(device)
-    goal_gripper_pcd = torch.tensor(obs['imagination_robot'][:, :, :3], dtype=torch.float32).to(device)
     robot0_eef_pos = torch.tensor(state[28:31], dtype=torch.float32).to(device)[None]
     robot0_eef_quat = torch.tensor(obs['quat_obs'], dtype=torch.float32).to(device)
     robot0_gripper_qpos = torch.tensor(robot_qpos_vec[-16:], dtype=torch.float32).to(device)[None]
     observed_pc_seg_gt = torch.tensor(obs['instance_1-seg_gt'], dtype=torch.float32).to(device)
     imagined_robot_pc_seg_gt = torch.tensor(obs['imagination_robot'][:, :, 3:], dtype=torch.float32).to(device)
+
+    if policy_cfg.goal_mode == "None":
+        goal_gripper_pcd = torch.tensor(obs['imagination_robot'][:, :, :3], dtype=torch.float32).to(device)
+    elif policy_cfg.goal_mode == "high_level":
+        assert high_level_model is not None
+        num_imagin_points = obs['imagination_robot'].shape[1]
+        chosen_four_point_idx = torch.tensor([23, 47, 71, 95])
+        goal_gripper_pcd = torch.zeros((1, num_imagin_points, 3), dtype=torch.float32).to(device)
+        high_level_obs = extract_model_input(obs, device)
+        with torch.no_grad():
+            pred = high_level_model(high_level_obs)
+        pred_points = compute_weighted_displacement(high_level_obs, pred)
+        goal_gripper_pcd[:, chosen_four_point_idx] = pred_points
+    else:
+        raise NotImplementedError
 
     if obs_dict is None:  # First step
         obs_dict = {
@@ -168,6 +190,15 @@ def main(cfg):
     else:
         raise NotImplementedError
 
+    if cfg.policy.goal_mode == "high_level":
+        if eval_cfg.high_level.model == "pn_plus_plus":
+            high_level_model = PointNet2_super(num_classes=13, input_channel=3).to(device)
+        else:
+            raise NotImplementedError
+        high_level_model.load_state_dict(torch.load(f"{utils.get_original_cwd()}/{eval_cfg.high_level.ckpt_file}"))
+    else:
+        high_level_model = None
+
     eval_instances = len(env.instance_list)
     eval_per_instance = eval_cfg.eval_per_instance
     eval_with_scene_seg = cfg.with_scene_seg
@@ -206,9 +237,10 @@ def main(cfg):
                         obs = obs[np.newaxis, :]
 
                     if eval_cfg.model == "ppo":
+                        obs_dict = {}
                         action = policy.predict(observation=obs, deterministic=True)[0]
                     elif eval_cfg.model == "dp3":
-                        obs_dict = get_dp3_obs(obs_dict, obs, device, N_OBS_STEPS, eval_with_scene_seg)
+                        obs_dict = get_dp3_obs(obs_dict, obs, device, N_OBS_STEPS, eval_with_scene_seg, cfg.policy, high_level_model)
 
                         # Receding horizon control
                         if len(action_queue) == 0:
@@ -231,8 +263,10 @@ def main(cfg):
                     observed = {
                         'obs': get_obs(obs),
                         'action': action,  # shape (22,)
-                        'reward': reward
+                        'reward': reward,
                     }
+                    if "goal_gripper_pcd" in obs_dict:
+                        observed['goal'] = obs_dict["goal_gripper_pcd"].squeeze()[-1].cpu().numpy() # only current goal
                     demo_data.append(observed)
 
                     # Observation Structure:
