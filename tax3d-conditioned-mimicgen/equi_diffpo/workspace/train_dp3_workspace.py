@@ -35,7 +35,7 @@ from equi_diffpo.model.common.normalizer import LinearNormalizer
 from equi_diffpo.common.pytorch_util import dict_apply, optimizer_to
 from equi_diffpo.model.diffusion.ema_model import EMAModel
 from equi_diffpo.model.common.lr_scheduler import get_scheduler
-from equi_diffpo.dataset.DP3DexArtDataset import DP3DexArtDataset
+from equi_diffpo.dataset.DP3DexArtDataset import DP3DexArtDataset, get_dataloaders
 import pickle
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
@@ -128,34 +128,9 @@ class TrainDP3WorkspaceNEW:
                 print(f"Resuming from checkpoint {lastest_ckpt_path}")
                 self.load_checkpoint(path=lastest_ckpt_path)
 
-        # # configure dataset
-        # dataset: BaseImageDataset
-        # dataset = hydra.utils.instantiate(cfg.task.dataset)
-        # assert isinstance(dataset, BaseImageDataset), print(f"dataset must be BaseDataset, got {type(dataset)}")
-        # train_dataloader = DataLoader(dataset, **cfg.dataloader)
-        # normalizer = dataset.get_normalizer()
+        dataset = DP3DexArtDataset(cfg.data_dir, goal_mode=cfg.policy.goal_mode, with_scene_seg=cfg.with_scene_seg)
+        train_dataloader, val_dataloader, test_dataloader = get_dataloaders(dataset, cfg.dataloader.batch_size)
 
-        # # configure validation dataset
-        # val_dataset = dataset.get_validation_dataset()
-        # val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
-
-        dataset = DP3DexArtDataset(cfg.data_dir, goal_mode=cfg.policy.goal_mode)
-    
-        total_size = len(dataset)
-        train_size = int(0.8 * total_size)
-        val_size = int(0.1 * total_size)
-        test_size = total_size - train_size - val_size
-
-        train_dataset, val_dataset, test_dataset = random_split(
-            dataset,
-            [train_size, val_size, test_size],
-            generator=torch.Generator().manual_seed(cfg.training.seed)
-        )
-
-        train_dataloader = DataLoader(train_dataset, batch_size=cfg.dataloader.batch_size, shuffle=True, num_workers=cfg.dataloader.num_workers)
-        val_dataloader = DataLoader(val_dataset, batch_size=cfg.dataloader.batch_size, shuffle=False, num_workers=cfg.dataloader.num_workers)
-        test_dataloader = DataLoader(test_dataset, batch_size=cfg.dataloader.batch_size, shuffle=False, num_workers=cfg.dataloader.num_workers)
-        
         normalizer = self.build_normalizer(dataset)
         self.model.set_normalizer(normalizer)
         if cfg.training.use_ema:
