@@ -89,8 +89,6 @@ def main(args: Args):
     #     **env_kwargs
     # )
     # import dexhier.xarm6_leap
-    print(env_kwargs)
-    exit()
     import dexhier.spraybottle
     env = gym.make("SprayBottle-v1", robot_uids="xarm6_leap", **env_kwargs)
     record_dir = args.record_dir
