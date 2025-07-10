@@ -223,6 +223,7 @@ def main(cfg):
     # demo_save_dir = os.path.join('demo_DexArt_unseen', task_name)
     # os.makedirs(demo_save_dir, exist_ok=True)
     
+    seed_step = 1399  # set some random seed interval
     success_id = 0
     demo_id = 0
     num = 0
@@ -230,7 +231,7 @@ def main(cfg):
         for _ in range(eval_per_instance):       # Loop over number of episodes per instance
             for _ in range(eval_instances):
                 
-                episode_seed = eval_cfg.seed + demo_id * 1399
+                episode_seed = eval_cfg.seed + demo_id * seed_step
                 env.seed(episode_seed)
                 np.random.seed(episode_seed)
                 torch.manual_seed(episode_seed)
