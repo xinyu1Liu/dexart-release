@@ -76,10 +76,11 @@ if __name__ == "__main__":
     success_list = list()
     reward_list = list()
 
-    demo_save_dir = os.path.join('demo_DexArt_w.seg&q', task_name)
+    demo_save_dir = os.path.join('demo_DexArt_seen', task_name)
     os.makedirs(demo_save_dir, exist_ok=True)
 
     demo_id = 0
+    success_id = 0
 
     with tqdm(total=eval_per_instance * eval_instances) as pbar:
         for _ in range(eval_per_instance):       # Loop over number of episodes per instance
@@ -151,10 +152,15 @@ if __name__ == "__main__":
 
                 if eval_success:
                     #print(demo_data)         
-                    with open(os.path.join(demo_save_dir, f'demo_{demo_id}.pkl'), 'wb') as f:
+                    with open(os.path.join(demo_save_dir, f'demo_{demo_id}_{success_id}.pkl'), 'wb') as f:
                         pickle.dump(demo_data, f)
+                    success_id +=1
 
-                    demo_id += 1
+                    if success_id == 1000:
+                        print("1000!!!")
+
+                demo_id += 1
+
 
 
     print(f"checkpoint in {checkpoint_path} success rate = {np.mean(success_list)}")
