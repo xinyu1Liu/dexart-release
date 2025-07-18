@@ -95,7 +95,7 @@ class XArm6Leap(BaseAgent):
 
     hand_stiffness = 3  # 3 # pgain
     hand_damping = 0.1  # 0.1 # dgain
-    hand_friction = 0.01
+    hand_friction = 0.5
     hand_force_limit = 0.5  # 0.5
     # armature 0.001
 
