@@ -70,7 +70,7 @@ class DP3DexArtDataset(Dataset):
             'robot0_gripper_qpos': torch.stack([torch.tensor(o["obs"]['robot_qpos_vec'][-16:], dtype=torch.float32) for o in obs_window]),
         }
         if self.goal_mode == 'pointcloud_oracle':
-            goal_obs_imagin = self.getGoal(traj, start_idx)
+            goal_obs_imagin, _ = self.getGoal(traj, start_idx)
             obs['goal_gripper_pcd'] = torch.tensor(goal_obs_imagin, dtype=torch.float32)
         elif self.goal_mode == 'None':
             obs['goal_gripper_pcd'] = torch.tensor(traj[start_idx]["obs"]['imagined_robot_point_cloud'], dtype=torch.float32)

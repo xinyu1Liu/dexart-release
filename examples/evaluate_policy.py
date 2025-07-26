@@ -20,8 +20,8 @@ def get_obs(obs):
         'palm_w': state[25: 28],
         'palm_pose.p': state[28: 31],
         "palm_pose.q": obs['quat_obs'],
-        'observed_point_cloud': obs['instance_1-point_cloud'],  # (512, 3)
-        "observed_pc_seg-gt": obs['instance_1-seg_gt'],         # (512, 4)
+        'observed_point_cloud': obs['instance_1-point_cloud'],  # (N, 3)
+        "observed_pc_seg-gt": obs['instance_1-seg_gt'],         # (N, 4)
         'imagined_robot_point_cloud': obs['imagination_robot'][:, :3],  # (96, 3)
         'imagined_robot_pc_seg-gt': obs['imagination_robot'][:, 3:],    # (96, 4)
         'stage': obs['stage'],
@@ -112,32 +112,6 @@ if __name__ == "__main__":
                         'reward': reward
                     }
                     demo_data.append(observed)
-
-                    # Observation Structure:
-                    #     instance_1-seg_gt: shape=(512, 4), dtype=float64
-                    #     instance_1-point_cloud: shape=(512, 3), dtype=float64
-                    #     imagination_robot: shape=(96, 7), dtype=float64
-                    #     state: shape=(32,), dtype=float64
-                    #     oracle_state: shape=(32,), dtype=float64
-
-                    
-                    # print("Observation Structure:")
-                    # for key, value in obs.items():
-                    #      print(f"{key}: shape={value.shape}, dtype={value.dtype}")
-                    # break
-                    
-                    # # Extract and concatenate point cloud data from obs
-                    # observed_pc = np.concatenate([S
-                    #     obs['instance_1-point_cloud'],    # (512, 3) point cloud
-                    #     obs['instance_1-seg_gt']          # (512, 4) segmentation label
-                    # ], axis=1)                             # (512, 7) 
-                    # observed_pc = np.concatenate([
-                    #     observed_pc,
-                    #     obs['imagination_robot']           # (96, 7)
-                    # ], axis=0)                             # => (608, 7)
-                    # assert observed_pc.shape == (608, 7)
-                    # demo_data.append(observed_pc)  # Append to trajectory list 
-                    
 
                     if env.is_eval_done:
                         eval_success = True
