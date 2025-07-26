@@ -7,7 +7,7 @@ _target_: equi_diffpo.workspace.train_dp3_workspace.TrainDP3WorkspaceNEW
 shape_meta:
   obs:
     point_cloud:
-      shape: [512, 3]
+      shape: [1024, 3]
     imagin_robot:
       shape: [96, 3]
     robot0_eef_pos:
@@ -31,7 +31,7 @@ n_latency_steps: 0
 dataset_obs_steps: ${n_obs_steps}
 keypoint_visible_rate: 1.0
 obs_as_global_cond: True
-data_dir: "/data/xinyu/demo_dexart_Jun18/laptop"
+data_dir: "/data/xinyu/demo_dexart_Jul26_1024pts/laptop"
 load_ckpt_path: null
 with_scene_seg: False
 

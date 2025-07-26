@@ -12,7 +12,7 @@ import einops
 from equi_diffpo.model.vision.layers import RelativeCrossAttentionModule, RotaryPositionEncoding3D
 from equi_diffpo.model.vision.articubot import PointNet2_super
 
-NUM_SCENE_PCD = 512
+NUM_SCENE_PCD = 1024
 NUM_HAND_PCD = 96
 
 def create_mlp(
