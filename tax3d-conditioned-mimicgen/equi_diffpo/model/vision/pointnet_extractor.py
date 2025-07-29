@@ -179,7 +179,7 @@ class Act3dEncoder(nn.Module):
             x[..., NUM_SCENE_PCD+NUM_HAND_PCD:, :] = 0   # search 138 TO DO
 
         # scene point cloud
-        chosen_four_point_idx = torch.tensor([23, 47, 71, 95])   #8/16 TO DO
+        chosen_four_point_idx = torch.tensor([4, 12, 20, 28, 36, 44, 52, 60, 68, 76, 84, 92])
         point_cloud = x[..., :NUM_SCENE_PCD, :]
 
         B, N, C = point_cloud.shape
@@ -198,7 +198,7 @@ class Act3dEncoder(nn.Module):
         # attention between gripper pcd and scene pcd
         gripper_pcd = x[..., NUM_SCENE_PCD + chosen_four_point_idx, :]
         gripper_pcd_rel_pos_embedding = self.nets['relative_pe_layer'](gripper_pcd)  # B num_gripper_points encoder_output_dim
-        gripper_pcd_features = self.nets['embed'].weight.unsqueeze(0).repeat(4, B, 1)  # num_gripper_points B encoder_output_dim    #size 4? to do
+        gripper_pcd_features = self.nets['embed'].weight.unsqueeze(0).repeat(12, B, 1)  # num_gripper_points B encoder_output_dim    #size 4? to do
 
         displacement_to_goal = x[..., NUM_SCENE_PCD + NUM_HAND_PCD + chosen_four_point_idx, :3] - x[..., NUM_SCENE_PCD + chosen_four_point_idx, :3]
         input_to_position_embedding = torch.cat([gripper_pcd, displacement_to_goal], dim=-1)  # B num_gripper_points (in_channels+3)
@@ -215,7 +215,7 @@ class Act3dEncoder(nn.Module):
         # goal gripper
         goal_gripper_pcd = x[..., NUM_SCENE_PCD + NUM_HAND_PCD + chosen_four_point_idx, :]
         goal_gripper_pcd_rel_pos_embedding = self.nets['relative_pe_layer'](goal_gripper_pcd)
-        goal_gripper_pcd_features = self.nets['goal_embed'].weight.unsqueeze(0).repeat(4, B, 1)
+        goal_gripper_pcd_features = self.nets['goal_embed'].weight.unsqueeze(0).repeat(12, B, 1)
 
         displacement_to_goal = goal_gripper_pcd[..., :3] - gripper_pcd[..., :3]
         input_to_position_embedding = torch.cat([goal_gripper_pcd, displacement_to_goal], dim=-1)
@@ -430,7 +430,7 @@ class DP3Encoder(nn.Module):
                 self.extractor = PointNetEncoderXYZ(**pointcloud_encoder_cfg)
         elif pointnet_type == "act3d":
             self.extractor = Act3dEncoder(goal_mode=goal_mode, **pointcloud_encoder_cfg)
-            self.n_output_channels = 480
+            self.n_output_channels = 480 * 3
         else:
             raise NotImplementedError(f"pointnet_type: {pointnet_type}")
 

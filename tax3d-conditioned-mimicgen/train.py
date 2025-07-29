@@ -6,7 +6,7 @@ python train.py --config-name=train_diffusion_lowdim_workspace
 
 # python tax3d-conditioned-mimicgen/train.py --config-name=dp3 task_name=laptop n_demo=1000 policy.pointnet_type=act3d  policy.goal_mode=None training.seed=1
 # export PYTHONPATH=/home/xinyul5/tax3d-conditioned-mimicgen:$PYTHONPATH
-
+# CUDA_VISIBLE_DEVICES=0,1,2,3 PYTHONPATH=/project_data/held/xinyul5/dexart-release/tax3d-conditioned-mimicgen:$PYTHONPATH python train.py --config-name=dp3 task_name=laptop n_demo=10000 policy.pointnet_type=act3d policy.goal_mode=pointcloud_oracle training.seed=1 training.device="cuda:3" enable_wandb=true
 
 import sys
 # use line-buffering for both stdout and stderr

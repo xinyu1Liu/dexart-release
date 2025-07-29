@@ -425,6 +425,9 @@ class BaseRLEnv(BaseSimulationEnv, gym.Env):
                         imagination_goal.append(transformed_points)
                     self.imaginations["imagination_goal"] = np.concatenate(imagination_goal, axis=0)
             elif img_type == "robot":
+                # index_map = {}
+                # start_idx = 0
+
                 imagination_robot = []
                 for link_name, (actor, points, img_class) in img_config.items():
                     pose = self.robot.get_pose().inv() * actor.get_pose()
@@ -438,7 +441,31 @@ class BaseRLEnv(BaseSimulationEnv, gym.Env):
                     seg_vector = np.repeat(seg_vector, transformed_points.shape[0], axis=0)  # Ni * 4
                     transformed_points = np.concatenate([transformed_points, seg_vector], axis=1)  # Ni * 7
                     imagination_robot.append(transformed_points)
+
+                    # num_pts = points.shape[0]
+                    # index_map[link_name] = (start_idx, start_idx + num_pts)
+                    # start_idx += num_pts
+
                 self.imaginations["imagination_robot"] = np.concatenate(imagination_robot, axis=0)  # sum(Ni) * 7
+                # for key, value in index_map.items():
+                #     print(key, value)
+                
+                '''
+                LXY NOTE: Index Map
+                
+                link_15.0_tip (0, 8)
+                link_3.0_tip (8, 16)
+                link_7.0_tip (16, 24)
+                link_11.0_tip (24, 32)
+                link_15.0 (32, 40)
+                link_3.0 (40, 48)
+                link_7.0 (48, 56)
+                link_11.0 (56, 64)
+                link_14.0 (64, 72)
+                link_2.0 (72, 80)
+                link_6.0 (80, 88)
+                link_10.0 (88, 96)
+                '''
 
                 '''
                 LXY NOTE: Segmentation for imagination_robot: 

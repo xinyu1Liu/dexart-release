@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 from torch import optim
-from dp3_dexart_dataset import DP3DexArtDataset, get_dataloaders
+from equi_diffpo.dataset.DP3DexArtDataset import DP3DexArtDataset, get_dataloaders
 import sys
 sys.path.append('tax3d-conditioned-mimicgen')
 from equi_diffpo.model.vision.articubot import PointNet2_super
