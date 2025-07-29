@@ -33,7 +33,7 @@ keypoint_visible_rate: 1.0
 obs_as_global_cond: True
 data_dir: "/data/xinyu/demo_dexart_Jul26_1024pts/laptop"
 load_ckpt_path: null
-with_scene_seg: False
+with_scene_seg: false
 
 policy:
   type: "dp3" # dp3 or dexart (i.e. pointnet+ mlp)

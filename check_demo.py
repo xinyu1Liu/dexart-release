@@ -43,3 +43,22 @@ print_detailed_structure(data)
 
 #print("Count of 1s in each seg_vector column:", np.sum(data[0]["obs"]["observed_pc_seg-gt"] == 1, axis=0))
 #print("Count of 1s in each seg_vector column:", np.sum(data[0]["obs"]["imagined_robot_pc_seg-gt"] == 1, axis=0))
+
+'''
+Dict with keys:
+      Key: obs -> Type: <class 'dict'>
+        Dict with keys:
+          Key: robot_qpos_vec -> Type: <class 'numpy.ndarray'>; shape: (22,), dtype: float64
+          Key: palm_v -> Type: <class 'numpy.ndarray'>; shape: (3,), dtype: float64
+          Key: palm_w -> Type: <class 'numpy.ndarray'>; shape: (3,), dtype: float64
+          Key: palm_pose.p -> Type: <class 'numpy.ndarray'>; shape: (3,), dtype: float64
+          Key: palm_pose.q -> Type: <class 'numpy.ndarray'>; shape: (4,), dtype: float32
+          Key: observed_point_cloud -> Type: <class 'numpy.ndarray'>; shape: (512, 3), dtype: float64
+          Key: observed_pc_seg-gt -> Type: <class 'numpy.ndarray'>; shape: (512, 4), dtype: float64
+          Key: imagined_robot_point_cloud -> Type: <class 'numpy.ndarray'>; shape: (96, 3), dtype: float64
+          Key: imagined_robot_pc_seg-gt -> Type: <class 'numpy.ndarray'>; shape: (96, 4), dtype: float64
+          Key: stage -> Type: <class 'int'>; value: 1
+          Key: progress -> Type: <class 'numpy.float64'>; value: 0.000000
+      Key: action -> Type: <class 'numpy.ndarray'>; shape: (22,), dtype: float32
+      Key: reward -> Type: <class 'numpy.float64'>; value: -0.044547
+'''

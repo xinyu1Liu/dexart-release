@@ -27,10 +27,32 @@ from equi_diffpo.model.vision.articubot import PointNet2_super
 from train_high_level import compute_weighted_displacement
 #from train_dp3 import set_random_quaternion
 
+def retrieve_goal(demo_id, oracle_path):
+    prefix = f'demo_{demo_id}_'
+
+    matched_file = None
+    for fname in os.listdir(oracle_path):
+        if fname.startswith(prefix):
+            matched_file = os.path.join(oracle_path, fname)
+            break
+
+    if matched_file:
+        if matched_file.endswith('.pkl'):
+            with open(matched_file, 'rb') as f:
+                traj = pickle.load(f)
+    else:
+        return None
+    
+    progress_array = np.array([i['obs']['progress'] for i in traj])
+    subgoal_idx = np.where(progress_array > 1e-5)[0][0]
+
+    return np.array([traj[subgoal_idx]["obs"]["imagined_robot_point_cloud"], traj[-1]["obs"]["imagined_robot_point_cloud"]])
+
+
 def get_obs(obs):
     """Observation for saving"""
     state = obs['state']  # shape (32,)
-    obs = {
+    obs_dict = {
         'robot_qpos_vec': state[:22],
         'palm_v': state[22: 25],
         'palm_w': state[25: 28],
@@ -40,8 +62,9 @@ def get_obs(obs):
         "observed_pc_seg-gt": obs['instance_1-seg_gt'],         # (N, 4)
         'imagined_robot_point_cloud': obs['imagination_robot'][:, :3],  # (96, 3)
         'imagined_robot_pc_seg-gt': obs['imagination_robot'][:, 3:],    # (96, 4)
+        'progress': obs['progress']
     }
-    return obs
+    return obs_dict
 
 def extract_model_input(obs_batch, device):
     pcd = torch.from_numpy(obs_batch["instance_1-point_cloud"])
@@ -51,7 +74,7 @@ def extract_model_input(obs_batch, device):
 
 N_OBS_STEPS = 2
 
-def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg, policy_cfg, high_level_model=None):
+def get_dp3_obs(obs_dict, obs, oracle_goal, device, n_obs_steps, eval_with_scene_seg, policy_cfg, high_level_model=None):
     """Observation for DP3 inference"""
     state = obs['state'].squeeze()  # shape (32,)
     robot_qpos_vec = state[:22]
@@ -75,6 +98,12 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg, policy_
             pred = high_level_model(high_level_obs)
         pred_points = compute_weighted_displacement(high_level_obs, pred)
         goal_gripper_pcd[:, chosen_four_point_idx] = pred_points
+    elif policy_cfg.goal_mode == 'pointcloud_oracle':
+        if (obs['progress'] > 10e-6):
+            goal_gripper_pcd = torch.tensor(oracle_goal[1], dtype=torch.float32).to(device)
+        else:
+            goal_gripper_pcd = torch.tensor(oracle_goal[0], dtype=torch.float32).to(device)
+        goal_gripper_pcd = goal_gripper_pcd[None]
     else:
         raise NotImplementedError
 
@@ -88,8 +117,9 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg, policy_
             'robot0_gripper_qpos': torch.cat([robot0_gripper_qpos] * n_obs_steps, dim=0)[None],
         }
         if eval_with_scene_seg:
-            obs_dict['observed_pc_seg-gt']: torch.cat([observed_pc_seg_gt] * n_obs_steps, dim=0)[None]
-            obs_dict['imagined_robot_pc_seg-gt']: torch.cat([imagined_robot_pc_seg_gt] * n_obs_steps, dim=0)[None]
+            obs_dict['observed_pc_seg-gt'] = torch.cat([observed_pc_seg_gt] * n_obs_steps, dim=0)[None]
+            obs_dict['imagined_robot_pc_seg-gt'] = torch.cat([imagined_robot_pc_seg_gt] * n_obs_steps, dim=0)[None]
+
     else:  # Succeeding steps
         new_values = {
             'point_cloud': point_cloud,
@@ -100,7 +130,7 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg, policy_
             'robot0_gripper_qpos': robot0_gripper_qpos,
         }
         if eval_with_scene_seg:
-            new_values['observed_pc_seg-gt'] = observed_pc_seg_gt,
+            new_values['observed_pc_seg-gt'] = observed_pc_seg_gt
             new_values['imagined_robot_pc_seg-gt'] = imagined_robot_pc_seg_gt
         
         obs, n_points, _ = new_values["point_cloud"].shape
@@ -112,11 +142,6 @@ def get_dp3_obs(obs_dict, obs, device, n_obs_steps, eval_with_scene_seg, policy_
     return obs_dict
 
 def prepare_dp3(cfg, device, checkpoint_path):
-    seed = cfg.training.seed
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
     model: DP3 = hydra.utils.instantiate(cfg.policy).to(device)
 
     checkpoint = torch.load(f"{utils.get_original_cwd()}/{checkpoint_path}", map_location=device)
@@ -147,22 +172,29 @@ def prepare_dexart(device, checkpoint_path):
 @hydra.main(version_base="1.1", config_path="tax3d-conditioned-mimicgen/equi_diffpo/config", config_name="eval_dexart")
 def main(cfg):
     """
-    python evaluate_policy.py eval.task_name=laptop eval.checkpoint_path=checkpoints/epoch_00160.ckpt eval.eval_per_instance=10 eval.model=dp3
+    python evaluate_policy.py eval.task_name=laptop eval.checkpoint_path=checkpoints_remote/100.ckpt eval.eval_per_instance=10 eval.model=dp3
     """
     eval_cfg = cfg.eval
 
     task_name = eval_cfg.task_name  # Now use cfg, which includes argparse overrides
     use_test_set = eval_cfg.use_test_set
     checkpoint_path = eval_cfg.checkpoint_path
+
+    random.seed(eval_cfg.seed)
     np.random.seed(eval_cfg.seed)
+    torch.manual_seed(eval_cfg.seed)
+
     device = "cuda:0"
 
     if use_test_set:
         indeces = TRAIN_CONFIG[task_name]['unseen']
         print(f"using unseen instances {indeces}")
+        suffix = "unseen"
     else:
         indeces = TRAIN_CONFIG[task_name]['seen']
         print(f"using seen instances {indeces}")
+        suffix = "seen"
+    oracle_path = f"/data/xinyu/demo_dexart_{suffix}_goal/laptop"
 
     rand_pos = RANDOM_CONFIG[task_name]['rand_pos']
     rand_degree = RANDOM_CONFIG[task_name]['rand_degree']
@@ -202,21 +234,31 @@ def main(cfg):
     eval_instances = len(env.instance_list)
     eval_per_instance = eval_cfg.eval_per_instance
     eval_with_scene_seg = cfg.with_scene_seg
+    goal_mode = cfg.policy.goal_mode
     success_list = list()
     reward_list = list()
     progress_list = list()
     stage_list = list()
 
-    # demo_save_dir_success = os.path.join('demo_dp3', task_name, 'success_demo')
-    # demo_save_dir_failure = os.path.join('demo_dp3', task_name, 'failure_demo')
-    # os.makedirs(demo_save_dir_success, exist_ok=True)
-    # os.makedirs(demo_save_dir_failure, exist_ok=True)
+    demo_save_dir_success = os.path.join('demo_dp3', task_name, 'success_demo')
+    demo_save_dir_failure = os.path.join('demo_dp3', task_name, 'failure_demo')
+    os.makedirs(demo_save_dir_success, exist_ok=True)
+    os.makedirs(demo_save_dir_failure, exist_ok=True)
 
+    seed_step = 1399
+    success_id = 0
     demo_id = 0
-
+    num = 0
     with tqdm(total=eval_per_instance * eval_instances) as pbar:
         for _ in range(eval_per_instance):       # Loop over number of episodes per instance
             for _ in range(eval_instances):
+                
+                episode_seed = eval_cfg.seed + demo_id * seed_step
+                env.seed(episode_seed)
+                np.random.seed(episode_seed)
+                torch.manual_seed(episode_seed)
+                random.seed(episode_seed)
+
                 obs = env.reset()
                 eval_success = False
                 progress = 0
@@ -225,6 +267,15 @@ def main(cfg):
                 demo_data = []
                 obs_dict = None # Initialize at None
                 action_queue = deque([])
+                if goal_mode == "pointcloud_oracle":
+                    oracle_goal = retrieve_goal(demo_id, oracle_path)
+                    if oracle_goal is None:
+                        demo_id += 1
+                        pbar.update(1)
+                        # print("flag is true")
+                        continue
+                else:
+                    oracle_goal = None
 
                 for j in range(env.horizon):         # Loop for max steps
                     if isinstance(obs, dict):
@@ -240,8 +291,7 @@ def main(cfg):
                         obs_dict = {}
                         action = policy.predict(observation=obs, deterministic=True)[0]
                     elif eval_cfg.model == "dp3":
-                        obs_dict = get_dp3_obs(obs_dict, obs, device, N_OBS_STEPS, eval_with_scene_seg, cfg.policy, high_level_model)
-
+                        obs_dict = get_dp3_obs(obs_dict, obs, oracle_goal, device, N_OBS_STEPS, eval_with_scene_seg, cfg.policy, high_level_model)
                         # Receding horizon control
                         if len(action_queue) == 0:
                             with torch.no_grad():
@@ -284,17 +334,17 @@ def main(cfg):
                 stage_list.append(stage)
                 pbar.update(1)
 
-                # if eval_success:
-                #     #print(demo_data)         
-                #     with open(os.path.join(demo_save_dir_success, f'demo_{demo_id}.pkl'), 'wb') as f:
-                #         pickle.dump(demo_data, f)
-                # else:
-                #     with open(os.path.join(demo_save_dir_failure, f'demo_{demo_id}.pkl'), 'wb') as f:
-                #         pickle.dump(demo_data, f)
+                if eval_success:
+                    with open(os.path.join(demo_save_dir_success, f'demo_{demo_id}.pkl'), 'wb') as f:
+                        pickle.dump(demo_data, f)
+                else:
+                    with open(os.path.join(demo_save_dir_failure, f'demo_{demo_id}.pkl'), 'wb') as f:
+                        pickle.dump(demo_data, f)
                 
                 demo_id += 1
+                num += 1
 
-
+    print(num)
     print(progress_list)
     print(stage_list)
     print(f"checkpoint in {checkpoint_path} success rate = {np.mean(success_list)}")
